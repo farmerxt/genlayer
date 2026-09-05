@@ -17,7 +17,7 @@ class VerificationStore {
   constructor() {
     const file = process.env.DATA_FILE;
     if (file) {
-      this.filePath = path.resolve(process.cwd(), file);
+      this.filePath = path.resolve(/*turbopackIgnore: true*/ process.cwd(), file);
       this.load();
     }
   }

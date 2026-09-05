@@ -231,14 +231,14 @@ adjudication → consensus) → inspect per-requirement results, reasons, and ev
 contracts/AgentzProofVerifier.py   # the Intelligent Contract (core feature)
 deploy/deployScript.ts             # genlayer deploy script
 fixtures/                          # demo repos (buggy + correct password reset, research)
-tests/direct/                      # 17 in-memory contract tests (pass, fail, injection, …)
+tests/direct/                      # 22 in-memory contract tests (pass, fail, injection red-team, …)
 tests/integration/                 # gltest end-to-end tests
 frontend/                          # Next.js 16 + TypeScript + Tailwind 4 app
   app/                             # pages + API routes
   lib/verifier/                    # deterministic checks, judge, engine, schema
   lib/genlayer/                    # live on-chain client
   lib/demo/                        # demo scenarios + fixture runner
-  tests/                           # 30 vitest unit/integration tests
+  tests/                           # 34 vitest unit/integration tests (scenarios, engine, schema, checks)
 ```
 
 ## License
