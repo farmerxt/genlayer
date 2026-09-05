@@ -163,11 +163,15 @@ class AgentzProofVerifier(gl.Contract):
         return json.dumps(result, sort_keys=True)
 
     @gl.public.view
-    def get_verification(self, verification_id: str) -> dict:
-        """Read a stored verification result (view — no consensus needed)."""
+    def get_verification(self, verification_id: str) -> str:
+        """Read a stored verification result (view — no consensus needed).
+
+        Returns a JSON string (not a dict) so the GenVM RPC layer can
+        serialise it without float-type issues.
+        """
         if verification_id not in self.verifications:
-            return {}
-        return json.loads(self.verifications[verification_id].result_json)
+            return "{}"
+        return self.verifications[verification_id].result_json
 
     @gl.public.view
     def get_verification_ids(self) -> list:
@@ -175,22 +179,25 @@ class AgentzProofVerifier(gl.Contract):
         return list(self.verifications.keys())
 
     @gl.public.view
-    def get_contract_info(self) -> dict:
+    def get_contract_info(self) -> str:
         """Static contract metadata shown in the frontend."""
-        return {
-            "name": "AgentzProofVerifier",
-            "purpose": "Decentralized verification of AI-agent work",
-            "verification_version": "1.0",
-            "consensus": "equivalence_principle (strict_eq)",
-            "deterministic_checks": [
-                "string_present",
-                "regex",
-                "function_exists",
-                "file_exists",
-                "reported",
-                "web_reachable",
-            ],
-        }
+        return json.dumps(
+            {
+                "name": "AgentzProofVerifier",
+                "purpose": "Decentralized verification of AI-agent work",
+                "verification_version": "1.0",
+                "consensus": "equivalence_principle (strict_eq)",
+                "deterministic_checks": [
+                    "string_present",
+                    "regex",
+                    "function_exists",
+                    "file_exists",
+                    "reported",
+                    "web_reachable",
+                ],
+            },
+            sort_keys=True,
+        )
 
     # ------------------------------------------------------------------
     # A. Deterministic checks (pure — identical on every validator)

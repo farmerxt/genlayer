@@ -98,7 +98,12 @@ export async function verifyOnGenLayer(
     args: [verificationId],
   });
 
-  const storedObj = (stored ?? {}) as unknown;
+  // The contract may return a JSON string (recommended to avoid GenVM
+  // float-serialisation issues) or an object depending on the runtime.
+  let storedObj: unknown = stored ?? {};
+  if (typeof storedObj === "string") {
+    storedObj = storedObj.length > 0 ? JSON.parse(storedObj) : {};
+  }
   if (typeof storedObj !== "object" || storedObj === null || Object.keys(storedObj as object).length === 0) {
     throw new Error("Verification not found on-chain after finalization.");
   }

@@ -41,7 +41,11 @@ def test_result_stored_on_chain(direct_deploy):
     )
 
     contract.verify("stored-1", request)
-    stored = contract.get_verification("stored-1")
+    stored_raw = contract.get_verification("stored-1")
+    if isinstance(stored_raw, str):
+        stored = json.loads(stored_raw)
+    else:
+        stored = stored_raw
     assert stored["decision"] == "PASS"
     assert stored["verification_id"] == "stored-1"
 
@@ -51,4 +55,8 @@ def test_result_stored_on_chain(direct_deploy):
 
 def test_unknown_id_returns_empty(direct_deploy):
     contract = direct_deploy("contracts/AgentzProofVerifier.py")
-    assert contract.get_verification("nope") == {}
+    result = contract.get_verification("nope")
+    if isinstance(result, str):
+        assert json.loads(result) == {}
+    else:
+        assert result == {}
