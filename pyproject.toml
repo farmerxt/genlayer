@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["fixtures", "frontend", ".venv", "artifacts", "node_modules"]
+markers = [
+    "integration: tests requiring GenLayer Studio (run with gltest)",
+]

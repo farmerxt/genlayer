@@ -1,0 +1,15 @@
+{
+  "name": "agentzproof-genlayer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AgentzProof — decentralized verification layer for AI-agent work, powered by GenLayer Intelligent Contracts.",
+  "scripts": {
+    "deploy": "genlayer deploy",
+    "lint:contract": "genvm-lint check contracts/AgentzProofVerifier.py",
+    "test:contract": "python3 -m pytest tests/direct -v",
+    "test:integration": "gltest tests/integration/ -v -s"
+  },
+  "devDependencies": {
+    "genlayer-js": "^1.1.8"
+  }
+}
