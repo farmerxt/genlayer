@@ -20,7 +20,11 @@ import type {
 import { verificationStore } from "@/lib/store/verification-store";
 import { runVerificationEngine } from "@/lib/verifier/engine";
 import { validateResultSchema } from "@/lib/verifier/schema";
-import { getGenLayerConfig, verifyOnGenLayer } from "@/lib/genlayer/verifier";
+import {
+  GenLayerCapacityError,
+  getGenLayerConfig,
+  verifyOnGenLayer,
+} from "@/lib/genlayer/verifier";
 
 // ---------------------------------------------------------------------------
 // Limits (mirror the contract's caps)
@@ -134,7 +138,7 @@ export function sanitizeRepository(value: unknown): RepositoryRef | undefined {
 // ---------------------------------------------------------------------------
 // Service operations
 // ---------------------------------------------------------------------------
-export function createVerification(input: Record<string, unknown>): Verification {
+export async function createVerification(input: Record<string, unknown>): Promise<Verification> {
   const title = clampStr(input.title, MAX_TITLE);
   if (!title) throw new ValidationError("Task name is required.");
 
@@ -161,18 +165,61 @@ export function createVerification(input: Record<string, unknown>): Verification
   return verificationStore.create(verification);
 }
 
-export function submitDeliverable(
+export async function restoreVerification(
+  id: string,
+  value: unknown,
+  allowedStatuses: Verification["status"][],
+): Promise<Verification | undefined> {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as Record<string, unknown>;
+  if (clampStr(source.id, 200) !== id) return undefined;
+  const status = clampStr(source.status, 32) as Verification["status"];
+  if (!allowedStatuses.includes(status)) return undefined;
+
+  try {
+    const now = new Date().toISOString();
+    const evidence = sanitizeEvidence(source.evidence);
+    const restored: Verification = {
+      id,
+      title: clampStr(source.title, MAX_TITLE),
+      description: clampStr(source.description, MAX_DESCRIPTION),
+      task: clampStr(source.task, MAX_TASK),
+      requirements: sanitizeRequirements(source.requirements),
+      creator: clampStr(source.creator, 200) || "Anonymous",
+      agent: clampStr(source.agent, 200) || "—",
+      reward: clampStr(source.reward, 100) || undefined,
+      deadline: clampStr(source.deadline, 100) || undefined,
+      evidenceRequirements: Array.isArray(source.evidenceRequirements)
+        ? source.evidenceRequirements.map((item) => clampStr(item, 300)).filter(Boolean).slice(0, 10)
+        : [],
+      status,
+      deliverable: source.deliverable ? sanitizeDeliverable(source.deliverable) : undefined,
+      evidence: evidence.items,
+      evidenceUrls: sanitizeEvidenceUrls(source.evidenceUrls),
+      repository: sanitizeRepository(source.repository),
+      createdAt: clampStr(source.createdAt, 64) || now,
+      updatedAt: clampStr(source.updatedAt, 64) || now,
+      demo: source.demo === true,
+    };
+    if (!restored.title) return undefined;
+    return verificationStore.upsert(restored);
+  } catch {
+    return undefined;
+  }
+}
+
+export async function submitDeliverable(
   id: string,
   input: Record<string, unknown>,
-): Verification {
-  const verification = verificationStore.get(id);
+): Promise<Verification> {
+  const verification = (await verificationStore.get(id)) ?? (await restoreVerification(id, input.verification, ["OPEN"]));
   if (!verification) throw new ValidationError("Verification not found.");
   if (verification.status === "PASSED" || verification.status === "FAILED") {
     throw new ValidationError("Verification already decided.");
   }
 
   const { items } = sanitizeEvidence(input.evidence);
-  const updated = verificationStore.update(id, {
+  const updated = await verificationStore.update(id, {
     agent: clampStr(input.agent, 200) || verification.agent,
     deliverable: sanitizeDeliverable(input.deliverable),
     evidence: items,
@@ -184,14 +231,17 @@ export function submitDeliverable(
   return updated;
 }
 
-export async function runVerify(id: string): Promise<{ verification: Verification; result: VerificationResult }> {
-  const verification = verificationStore.get(id);
+export async function runVerify(
+  id: string,
+  snapshot?: unknown,
+): Promise<{ verification: Verification; result: VerificationResult }> {
+  const verification = (await verificationStore.get(id)) ?? (await restoreVerification(id, snapshot, ["SUBMITTED"]));
   if (!verification) throw new ValidationError("Verification not found.");
   if (!verification.deliverable) {
     throw new ValidationError("No deliverable submitted yet.");
   }
 
-  verificationStore.update(id, { status: "VERIFYING" });
+  await verificationStore.update(id, { status: "VERIFYING" });
 
   const request = {
     version: "1.0",
@@ -220,8 +270,18 @@ export async function runVerify(id: string): Promise<{ verification: Verificatio
       result = live.result;
       if (live.tx) result.tx = live.tx;
     } catch (err) {
-      // Live path failed (network/contract issue) — surface the error so the
-      // UI can tell judges honestly, rather than silently faking a result.
+      // writeContract throws the capacity error before returning a hash. Reset
+      // only this confirmed pre-submission case to the existing manual retry
+      // state; never retry or reset after a hash has been returned.
+      if (err instanceof GenLayerCapacityError) {
+        await verificationStore.update(id, { status: "SUBMITTED" });
+        throw new ValidationError(
+          "GenLayer is temporarily at capacity. No proof was submitted. Please retry.",
+        );
+      }
+
+      // Other live failures remain in VERIFYING because their transaction
+      // lifecycle is unknown and must not be retried blindly.
       throw new ValidationError(
         `GenLayer verification failed: ${err instanceof Error ? err.message : String(err)}`,
       );
@@ -233,7 +293,7 @@ export async function runVerify(id: string): Promise<{ verification: Verificatio
   validateResultSchema(result);
 
   const status = result.decision === "PASS" ? "PASSED" : "FAILED";
-  const updated = verificationStore.update(id, { status, result });
+  const updated = await verificationStore.update(id, { status, result });
   if (!updated) throw new ValidationError("Verification not found.");
   return { verification: updated, result };
 }

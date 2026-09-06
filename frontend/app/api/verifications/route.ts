@@ -6,7 +6,8 @@ import { createVerification, ValidationError } from "@/lib/verifier/service";
 export const runtime = "nodejs";
 
 export async function GET() {
-  const summaries: VerificationSummary[] = verificationStore.list().map((v) => ({
+  const verifications = await verificationStore.list();
+  const summaries: VerificationSummary[] = verifications.map((v) => ({
     id: v.id,
     title: v.title,
     status: v.status,
@@ -24,7 +25,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const verification = createVerification(body ?? {});
+    const verification = await createVerification(body ?? {});
     return NextResponse.json({ verification }, { status: 201 });
   } catch (err) {
     if (err instanceof ValidationError) {

@@ -7,7 +7,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
   try {
     const body = await req.json();
-    const verification = submitDeliverable(id, body ?? {});
+    const verification = await submitDeliverable(id, body ?? {});
     return NextResponse.json({ verification });
   } catch (err) {
     if (err instanceof ValidationError) {

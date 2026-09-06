@@ -38,7 +38,7 @@ export async function POST(req: Request) {
       updatedAt: now,
       demo: true,
     };
-    verificationStore.upsert(verification);
+    await verificationStore.upsert(verification);
 
     return NextResponse.json({
       verification: {

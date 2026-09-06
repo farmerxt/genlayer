@@ -1,85 +1,16 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { VerificationCard } from "@/components/VerificationCard";
+import { VerificationFeed } from "@/components/VerificationFeed";
 import { verificationStore } from "@/lib/store/verification-store";
 import { getGenLayerConfig } from "@/lib/genlayer/verifier";
 
-export const metadata: Metadata = {
-  title: "Jobs — AgentzProof",
-  description: "Verification dashboard — open, submitted, verifying, passed, and failed AI-agent jobs.",
-};
-
+export const metadata: Metadata = { title: "Jobs — AgentzProof", description: "Browse and inspect verified AI-agent work." };
 export const dynamic = "force-dynamic";
 
-export default function JobsPage() {
-  const verifications = verificationStore.list();
-  const genConfig = getGenLayerConfig();
-
-  const statuses = ["OPEN", "SUBMITTED", "VERIFYING", "PASSED", "FAILED"] as const;
-  const counts: Record<string, number> = {};
-  for (const s of statuses) counts[s] = verifications.filter((v) => v.status === s).length;
-
-  return (
-    <div className="mx-auto max-w-6xl px-5 py-14">
-      <div className="mb-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="font-mono text-xs text-cyan-400">/jobs</p>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">
-            Verification dashboard
-          </h1>
-          <p className="mt-2 text-sm text-slate-400">
-            {verifications.length} verifications
-            {genConfig
-              ? ` · live contract on ${genConfig.network}`
-              : " · demo mode (contract not deployed)"}
-          </p>
-        </div>
-        <Link href="/create" className="btn-primary shrink-0">
-          + NEW VERIFICATION
-        </Link>
-      </div>
-
-      {/* status summary */}
-      <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {statuses.map((s) => (
-          <div key={s} className="card p-4">
-            <div className="font-mono text-[10px] uppercase tracking-widest text-slate-500">{s}</div>
-            <div className="mt-1 text-2xl font-bold text-white">{counts[s] ?? 0}</div>
-          </div>
-        ))}
-      </div>
-
-      {verifications.length === 0 ? (
-        <div className="card flex flex-col items-center gap-4 p-14 text-center">
-          <p className="text-slate-400">No verifications yet.</p>
-          <Link href="/demo" className="btn-primary">
-            TRY THE LIVE DEMO
-          </Link>
-          <Link href="/create" className="btn-secondary">
-            CREATE VERIFICATION
-          </Link>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {verifications.map((v) => (
-            <VerificationCard
-              key={v.id}
-              v={{
-                id: v.id,
-                title: v.title,
-                status: v.status,
-                creator: v.creator,
-                agent: v.agent,
-                requirementCount: v.requirements.length,
-                decision: v.result?.decision,
-                score: v.result?.score,
-                createdAt: v.createdAt,
-                demo: v.demo,
-              }}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
+export default async function JobsPage() {
+  const verifications = await verificationStore.list(); const genConfig = getGenLayerConfig();
+  const statuses = ["OPEN", "SUBMITTED", "VERIFYING", "PASSED", "FAILED"] as const; const counts: Record<string, number> = {};
+  for (const status of statuses) counts[status] = verifications.filter((v) => v.status === status).length;
+  const feedItems = verifications.map((v) => ({ id: v.id, title: v.title, status: v.status, creator: v.creator, agent: v.agent, requirementCount: v.requirements.length, decision: v.result?.decision, score: v.result?.score, createdAt: v.createdAt, demo: v.demo, description: v.description || v.task, evidenceCount: v.evidence.length }));
+  return <div className="mx-auto max-w-6xl px-5 py-10 md:py-14"><div className="flex flex-col gap-5 border-b border-[var(--border)] pb-7 md:flex-row md:items-end md:justify-between"><div><p className="eyebrow">Verification network</p><h1 className="mt-3 text-4xl font-bold tracking-tight md:text-5xl">Browse verified work.</h1><p className="mt-3 max-w-xl text-[var(--muted)]">Inspect agent deliverables, evidence, requirements, and the consensus behind every result.</p></div><Link href="/create" className="btn-primary shrink-0">Create verification <span aria-hidden>→</span></Link></div><div className="network-stats mt-6"><div><strong>{counts.PASSED ?? 0}</strong><span>Verified proofs</span></div><div><strong>{counts.FAILED ?? 0}</strong><span>Failed proofs</span></div><div><strong>{counts.VERIFYING ?? 0}</strong><span>Active checks</span></div><div><strong>{verifications.reduce((sum, v) => sum + v.requirements.length, 0)}</strong><span>Requirements checked</span></div><div><strong>{genConfig ? "LIVE" : "DEMO"}</strong><span>{genConfig ? genConfig.network : "simulated mode"}</span></div></div><div className="mt-8 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_18rem]"><main><div className="mb-4 flex items-center justify-between"><div><p className="eyebrow">Latest activity</p><h2 className="mt-2 text-xl font-bold">The proof feed</h2></div><span className="status-badge status-live">{genConfig ? "LIVE NETWORK" : "DEMO NETWORK"}</span></div>{feedItems.length ? <VerificationFeed items={feedItems} /> : <div className="feed-empty"><div className="feed-empty-icon">◎</div><h3>The network is ready for its first proof.</h3><p>Run the demo to inspect a complete verification, or create your own agreement.</p><div className="flex flex-wrap justify-center gap-2"><Link href="/demo" className="btn-primary">Explore live demo</Link><Link href="/create" className="btn-secondary">Create verification</Link></div></div>}</main><aside className="space-y-4"><div className="sidebar-card"><p className="eyebrow">Network statistics</p><div className="sidebar-stat"><span>Validator consensus</span><strong>{genConfig ? "Active" : "Simulated"}</strong></div><div className="sidebar-stat"><span>Network</span><strong>{genConfig?.network ?? "Demo mode"}</strong></div><div className="sidebar-stat"><span>Chain</span><strong>{genConfig ? "4221" : "—"}</strong></div></div><div className="sidebar-card"><p className="eyebrow">How to read the feed</p><p className="mt-3 text-sm leading-relaxed text-[var(--muted)]">Every post links to the original agreement, deliverable, evidence, requirement checks, and final proof record.</p><Link href="/about" className="mt-4 inline-block text-sm font-bold text-[var(--orange-dark)] hover:underline">How it works →</Link></div></aside></div></div>;
 }
