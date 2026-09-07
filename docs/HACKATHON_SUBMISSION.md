@@ -12,7 +12,7 @@ Open:
 - Create flow: <https://www.agentzproof.xyz/create>
 - Network/jobs: <https://www.agentzproof.xyz/jobs>
 - How it works: <https://www.agentzproof.xyz/about>
-- Repository: <https://github.com/poolparty21/genlayer>
+- Repository: <https://github.com/farmerxt/genlayer>
 
 Select the track:
 
@@ -51,7 +51,7 @@ https://www.agentzproof.xyz/demo
 **GitHub**
 
 ```text
-https://github.com/poolparty21/genlayer
+https://github.com/farmerxt/genlayer
 ```
 
 ### Description
