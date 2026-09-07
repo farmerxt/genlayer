@@ -2,7 +2,8 @@
  * Verification persistence.
  *
  * Production uses Upstash Redis over its serverless-friendly REST API when
- * UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are configured. Local
+ * UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN or
+ * KV_REST_API_URL/KV_REST_API_TOKEN are configured. Local
  * development retains the existing in-memory/JSON-file fallback.
  */
 
@@ -112,8 +113,12 @@ class UpstashPersistence implements VerificationPersistence {
 }
 
 function createPersistence(): VerificationPersistence {
-  const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  const url = (
+    process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL
+  )?.trim();
+  const token = (
+    process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN
+  )?.trim();
   if (url || token) {
     if (!url || !token) {
       throw new Error("Both UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required.");
