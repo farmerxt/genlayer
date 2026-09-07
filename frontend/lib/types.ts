@@ -95,6 +95,8 @@ export interface ConsensusInfo {
   method: string;
   principle: string;
   judge: string;
+  webEvidence?: string;
+  llmAdjudication?: string;
 }
 
 export interface GenLayerTxInfo {
