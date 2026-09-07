@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { startVerify, runDemoVerify, ValidationError, getGenLayerConfig } from "@/lib/verifier/service";
+import { verificationStore } from "@/lib/store/verification-store";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -10,10 +11,21 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     const body = await req.json().catch(() => ({}));
     const genConfig = getGenLayerConfig();
 
-    if (!genConfig) {
+    // Demo records always run the local simulated engine (DEMO · SIMULATED),
+    // even when a live contract is configured. The live on-chain path is used
+    // only for real verifications created through the Create flow, so demo
+    // clicks never fire real GenLayer transactions.
+    const record = await verificationStore.get(id);
+    const isDemoRecord = record?.demo === true;
+
+    if (!genConfig || isDemoRecord) {
       // Demo mode: local engine is fast, run synchronously and return the result.
       const { result } = await runDemoVerify(id, body?.verification);
-      return NextResponse.json({ result, mode: "demo", genlayer: { configured: false } });
+      return NextResponse.json({
+        result,
+        mode: "demo",
+        genlayer: { configured: Boolean(genConfig) },
+      });
     }
 
     // Live mode: submit the transaction and return immediately (202). The

@@ -276,31 +276,27 @@ export async function finalizeVerificationTransaction(
     );
   }
 
-  // The `verify` function returns the verification result as the transaction's
-  // execution return value. Read it from the finalized receipt instead of a
-  // separate view call: the current Bradbury node rejects genlayer-js's
-  // readContract RPC method ("gen_call" not found), while the write/receipt
-  // path is fully supported.
-  const execution = (receipt as { txExecutionResult?: unknown } | undefined)
-    ?.txExecutionResult;
-  const rawReturn =
-    (execution as { return_value?: unknown } | null | undefined)?.return_value ??
-    (execution as { output?: unknown } | null | undefined)?.output;
-  if (rawReturn === undefined || rawReturn === null) {
-    throw new Error(
-      "Verification finalized but its result is not readable from the receipt " +
-        "(txExecutionResult.return_value missing).",
-    );
-  }
+  // The `verify` write stores the result on-chain (self.verifications[id]);
+  // `get_verification` is a view function that returns it. Read it back with
+  // the SDK's readContract (gen_call) — the Bradbury receipt does not carry
+  // the contract's return value, and the contract must not be re-invoked.
+  const raw = await client.readContract({
+    address: config.contractAddress as `0x${string}`,
+    functionName: "get_verification",
+    args: [verificationId],
+  });
 
-  // The contract may return a JSON string (recommended to avoid GenVM
+  // The contract returns a JSON string (recommended to avoid GenVM
   // float-serialisation issues) or an object depending on the runtime.
-  let storedObj: unknown = rawReturn;
+  let storedObj: unknown = raw;
   if (typeof storedObj === "string") {
     storedObj = storedObj.length > 0 ? JSON.parse(storedObj) : {};
   }
   if (typeof storedObj !== "object" || storedObj === null || Object.keys(storedObj as object).length === 0) {
-    throw new Error("Verification result missing after finalization.");
+    throw new Error(
+      "Verification finalized but the contract holds no stored result for this id " +
+        "(get_verification returned empty).",
+    );
   }
 
   // Normalize snake_case on-chain result → app result shape.
