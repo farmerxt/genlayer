@@ -171,12 +171,22 @@ export async function writeContractWithCapacityRetry(
   throw new GenLayerCapacityError(errorText(lastCapacityError));
 }
 
+const STUDIO_RPC_URL = "https://studio.genlayer.com/api";
+const BRADBURY_RPC_URL = "https://rpc-bradbury.genlayer.com";
+
 export function getGenLayerConfig(): GenLayerConfig | null {
   const contractAddress = process.env.GENLAYER_CONTRACT_ADDRESS;
   if (!contractAddress) return null;
+  const network = process.env.GENLAYER_NETWORK ?? "studionet";
+  const explicitRpc = process.env.GENLAYER_RPC_URL?.trim();
+  // When no explicit RPC is configured, talk to the official network node
+  // directly. The studio gateway routes writes but does not implement
+  // gen_call, so verification read-backs would fail with "Method not found".
+  const rpcUrl =
+    explicitRpc || (network === "testnetBradbury" ? BRADBURY_RPC_URL : STUDIO_RPC_URL);
   return {
-    rpcUrl: process.env.GENLAYER_RPC_URL ?? "https://studio.genlayer.com/api",
-    network: process.env.GENLAYER_NETWORK ?? "studionet",
+    rpcUrl,
+    network,
     contractAddress,
     privateKey: process.env.GENLAYER_PRIVATE_KEY,
   };
@@ -216,9 +226,7 @@ export async function submitVerificationTransaction(
   const chain = resolveChain(config.network);
   const client = createClient({
     chain,
-    ...(config.rpcUrl && config.rpcUrl !== "https://studio.genlayer.com/api"
-      ? { endpoint: config.rpcUrl }
-      : {}),
+    ...(config.rpcUrl ? { endpoint: config.rpcUrl } : {}),
   });
 
   // Server-side account from private key (never exposed to the client).
@@ -259,9 +267,7 @@ export async function finalizeVerificationTransaction(
   const chain = resolveChain(config.network);
   const client = createClient({
     chain,
-    ...(config.rpcUrl && config.rpcUrl !== "https://studio.genlayer.com/api"
-      ? { endpoint: config.rpcUrl }
-      : {}),
+    ...(config.rpcUrl ? { endpoint: config.rpcUrl } : {}),
   });
 
   const receipt = await client.waitForTransactionReceipt({
