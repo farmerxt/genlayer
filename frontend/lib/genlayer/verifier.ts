@@ -276,21 +276,31 @@ export async function finalizeVerificationTransaction(
     );
   }
 
-  // Read the stored result back via a view call (accepted state).
-  const stored = await client.readContract({
-    address: config.contractAddress as `0x${string}`,
-    functionName: "get_verification",
-    args: [verificationId],
-  });
+  // The `verify` function returns the verification result as the transaction's
+  // execution return value. Read it from the finalized receipt instead of a
+  // separate view call: the current Bradbury node rejects genlayer-js's
+  // readContract RPC method ("gen_call" not found), while the write/receipt
+  // path is fully supported.
+  const execution = (receipt as { txExecutionResult?: unknown } | undefined)
+    ?.txExecutionResult;
+  const rawReturn =
+    (execution as { return_value?: unknown } | null | undefined)?.return_value ??
+    (execution as { output?: unknown } | null | undefined)?.output;
+  if (rawReturn === undefined || rawReturn === null) {
+    throw new Error(
+      "Verification finalized but its result is not readable from the receipt " +
+        "(txExecutionResult.return_value missing).",
+    );
+  }
 
   // The contract may return a JSON string (recommended to avoid GenVM
   // float-serialisation issues) or an object depending on the runtime.
-  let storedObj: unknown = stored ?? {};
+  let storedObj: unknown = rawReturn;
   if (typeof storedObj === "string") {
     storedObj = storedObj.length > 0 ? JSON.parse(storedObj) : {};
   }
   if (typeof storedObj !== "object" || storedObj === null || Object.keys(storedObj as object).length === 0) {
-    throw new Error("Verification not found on-chain after finalization.");
+    throw new Error("Verification result missing after finalization.");
   }
 
   // Normalize snake_case on-chain result → app result shape.
@@ -362,7 +372,7 @@ export function normalizeOnChainResult(
 function buildExplorerUrl(network: string, hash: string): string | undefined {
   const base =
     network === "testnetBradbury"
-      ? "https://testnet.bradbury.explorer.genlayer.com"
+      ? "https://explorer-bradbury.genlayer.com"
       : network === "testnetAsimov"
         ? "https://testnet.asimov.explorer.genlayer.com"
         : network === "studionet"
