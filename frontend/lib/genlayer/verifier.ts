@@ -179,11 +179,14 @@ export function getGenLayerConfig(): GenLayerConfig | null {
   if (!contractAddress) return null;
   const network = process.env.GENLAYER_NETWORK ?? "studionet";
   const explicitRpc = process.env.GENLAYER_RPC_URL?.trim();
-  // When no explicit RPC is configured, talk to the official network node
-  // directly. The studio gateway routes writes but does not implement
-  // gen_call, so verification read-backs would fail with "Method not found".
+  // testnetBradbury always talks to the official node directly. The studio
+  // gateway (the legacy default) routes write transactions but does not
+  // implement gen_call, so verification read-backs fail with "Method not
+  // found" even though the transaction finalized on-chain.
   const rpcUrl =
-    explicitRpc || (network === "testnetBradbury" ? BRADBURY_RPC_URL : STUDIO_RPC_URL);
+    network === "testnetBradbury"
+      ? BRADBURY_RPC_URL
+      : explicitRpc || STUDIO_RPC_URL;
   return {
     rpcUrl,
     network,
