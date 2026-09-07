@@ -13,14 +13,15 @@
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import {
+  ExecutionResult,
+  TransactionStatus,
+} from "genlayer-js/types";
 import type {
   TransactionHash,
-  TransactionStatus,
   GenLayerClient,
   DecodedDeployData,
-  GenLayerChain,
 } from "genlayer-js/types";
-import { localnet } from "genlayer-js/chains";
 
 export default async function main(client: GenLayerClient<any>) {
   const filePath = path.resolve(process.cwd(), "contracts/AgentzProofVerifier.py");
@@ -34,23 +35,23 @@ export default async function main(client: GenLayerClient<any>) {
 
   const receipt = await client.waitForTransactionReceipt({
     hash: deployTransaction as TransactionHash,
-    status: TransactionStatus.ACCEPTED,
+    status: TransactionStatus.FINALIZED,
     retries: 200,
   });
 
-  if (
-    receipt.status !== 5 &&
-    receipt.status !== 6 &&
-    receipt.statusName !== "ACCEPTED" &&
-    receipt.statusName !== "FINALIZED"
-  ) {
-    throw new Error(`Deployment failed. Receipt: ${JSON.stringify(receipt)}`);
+  if (receipt.statusName !== TransactionStatus.FINALIZED) {
+    throw new Error(`Deployment did not finalize. Receipt: ${JSON.stringify(receipt)}`);
+  }
+
+  if (receipt.txExecutionResultName !== ExecutionResult.FINISHED_WITH_RETURN) {
+    throw new Error(
+      `Deployment finalized without successful execution. Execution result: ${String(receipt.txExecutionResultName)}`,
+    );
   }
 
   const deployedContractAddress =
-    (client.chain as GenLayerChain).id === localnet.id
-      ? receipt.data.contract_address
-      : (receipt.txDataDecoded as DecodedDeployData)?.contractAddress;
+    (receipt.txDataDecoded as DecodedDeployData)?.contractAddress ??
+    (receipt.data?.contract_address as string | undefined);
 
   if (!deployedContractAddress) {
     throw new Error("Deployment succeeded but no contract address was returned.");

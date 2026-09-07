@@ -28,7 +28,7 @@ AgentzProof provides independent verification using GenLayer Intelligent Contrac
 3. **Evidence is collected** — submitted evidence + optional evidence URLs (fetched on-chain).
 4. **Deterministic checks run** — files, functions, strings, test outcomes, reachable URLs.
 5. **GenLayer evaluates subjective requirements** — LLM adjudication under the Equivalence Principle.
-6. **Validators reach consensus** — identical structured statuses across independent validators.
+6. **Validators reach consensus** — independent validators agree on stable structured decisions; reasoning text may differ.
 7. **PASS / FAIL is recorded** — per-requirement results, reasons, evidence used, on-chain.
 
 ## Why GenLayer?
@@ -39,8 +39,10 @@ natural-language requirement — "does this implementation actually reject expir
 question of **understanding, not arithmetic**.
 
 GenLayer Intelligent Contracts run Python on-chain, call LLMs natively, access the web, and
-reach consensus through the **Equivalence Principle**: independent validators must converge on
-identical output. That is exactly the judgment layer agentic transactions need. AgentzProof
+reach consensus through the **Equivalence Principle**. AgentzProof uses strict equality only
+for canonicalized web evidence; LLM adjudication uses GenLayer's custom leader/validator
+pattern so independent validators can disagree on wording while agreeing on stable decisions.
+That is exactly the judgment layer agentic transactions need. AgentzProof
 uses GenLayer not as a wrapper around a database, but as the **adjudicator** — the component
 that turns "the agent says it works" into "independent validators agree on PASS / FAIL".
 
@@ -58,7 +60,7 @@ that turns "the agent says it works" into "independent validators agree on PASS 
                                    │  .py)                                    │
                                    │  deterministic checks → ground truth     │
                                    │  web evidence (eq_principle)             │
-                                   │  LLM adjudication (strict_eq)            │
+                                   │  LLM adjudication (custom consensus)     │
                                    │  PASS/FAIL recorded on-chain             │
                                    └──────────────────────────────────────────┘
 ```
@@ -77,7 +79,7 @@ that turns "the agent says it works" into "independent validators agree on PASS 
 `AgentzProofVerifier.verify(verification_id, request_json)` adjudicates one request and
 stores the structured result on-chain. It implements the current genlayer-py API
 (`gl.Contract`, `gl.public.write/view`, `gl.nondet.web.render`, `gl.nondet.exec_prompt`,
-`gl.eq_principle.strict_eq`, `TreeMap` storage).
+`gl.vm.run_nondet_unsafe`, `gl.eq_principle.strict_eq`, `TreeMap` storage).
 
 The verification request separates:
 
@@ -100,21 +102,42 @@ The verification request separates:
 
 ### Consensus design
 
-The contract deliberately separates **deterministic facts** from **subjective judgment**:
+The contract deliberately separates **deterministic facts** from **subjective judgment**. The
+following is the complete nondeterminism audit for `AgentzProofVerifier`:
+
+| Operation | GenLayer call | Consensus rule |
+|---|---|---|
+| Evidence URLs and `http_status` checks | `gl.nondet.web.render` inside `gl.eq_principle.strict_eq(collect)` | Canonical, sorted JSON containing bounded web excerpts and reachability facts |
+| Subjective LLM adjudication | `gl.nondet.exec_prompt(prompt, response_format="json")` inside `gl.vm.run_nondet_unsafe(leader_fn, validator_fn)` | Leader and validator independently evaluate; compare only `decision` and per-requirement verdicts |
+| Deterministic checks | Pure Python outside nondeterministic blocks | Byte-identical contract ground truth; no consensus call |
+
+`strict_eq` is intentionally **not** used around any LLM call. The LLM validator does not
+compare natural-language reasoning (or the informational score); it validates both response
+schemas and compares only stable decision fields. This follows the official GenLayer guidance:
+[Non-determinism](https://docs.genlayer.com/developers/intelligent-contracts/features/non-determinism),
+[Equivalence Principle](https://docs.genlayer.com/developers/intelligent-contracts/equivalence-principle),
+and [Calling LLMs](https://docs.genlayer.com/developers/intelligent-contracts/features/calling-llms).
+
+The contract also separates **deterministic facts** from **subjective judgment** at execution time:
 
 | Layer | Mechanism | Consensus |
 |---|---|---|
 | Deterministic checks | Pure Python — byte-identical on every validator | No consensus needed (identical by construction) |
 | Web evidence | `gl.nondet.web.render` inside `gl.eq_principle.strict_eq` | Validators converge on one canonical web result |
-| Subjective requirements | `gl.nondet.exec_prompt` inside `strict_eq` | Validators must produce **identical** output |
+| Subjective requirements | `gl.nondet.exec_prompt` inside `gl.vm.run_nondet_unsafe(leader_fn, validator_fn)` | Validators independently evaluate and compare only decision + per-requirement verdicts; reasoning may differ |
 
 Consensus-friendliness rules implemented in the contract:
 
 - The LLM **never decides deterministic requirements** — deterministic facts are ground truth
   passed to the LLM, and it is instructed (and structurally prevented) from changing them.
-- The LLM outputs **only stable statuses** (`PASS`/`FAIL` per subjective requirement) — never
-  free-form prose. Reasons, scores, and summaries are assembled deterministically by the
-  contract, so validator outputs can actually satisfy strict equality.
+- The leader returns structured JSON (`decision`, `requirements`, `score`, `reasoning`) using
+  `gl.nondet.exec_prompt(..., response_format="json")`; the contract validates the shape before
+  accepting it.
+- The validator independently calls the same evaluation and compares only canonical decision
+  fields (`decision` and per-requirement `PASS`/`FAIL` values). Natural-language reasoning is
+  deliberately excluded from consensus comparison.
+- The final decision and score are assembled deterministically, and deterministic requirements
+  remain authoritative even when the LLM sees them as ground truth.
 - Web content is truncated, treated as untrusted data, and never used to modify instructions.
 - The LLM's output schema is validated; anything outside the expected shape is discarded and
   treated as a FAIL with a stable reason.
@@ -176,14 +199,19 @@ Set the network account in the GenLayer CLI config (follow `genlayer network` pr
 use GenLayer Studio. For the app's server-side signing, add `GENLAYER_PRIVATE_KEY` to
 `frontend/.env.local`.
 
-### 3. Deploy the Intelligent Contract
+### 3. Deployed Bradbury contract
 
-```bash
-# from the repo root
-npm install                    # installs genlayer-js for the deploy script
-genlayer deploy                # runs deploy/deployScript.ts
-# → prints: AgentzProofVerifier deployed 🎉  Contract address: 0x…
+AgentzProofVerifier has already been deployed to GenLayer Bradbury (chain ID 4221):
+
+```text
+Network: testnetBradbury
+RPC: https://rpc-bradbury.genlayer.com
+Contract: 0xbe1de3345603162554fcdff2b75cf4aa96c74329
+Deployment transaction: 0x61be412b8b8ab9a85cc8f1571781cb22a41326695f6f4ae147f02363db05c57c
 ```
+
+Do not redeploy this contract for normal frontend use. The frontend submits verification
+transactions to this existing address.
 
 ### 4. Configure the frontend
 
@@ -191,12 +219,16 @@ genlayer deploy                # runs deploy/deployScript.ts
 cd frontend
 cp .env.example .env.local
 # set:
-#   GENLAYER_CONTRACT_ADDRESS=<address from step 3>
-#   GENLAYER_NETWORK=studionet            # match step 2
-#   GENLAYER_RPC_URL=https://studio.genlayer.com/api
-#   GENLAYER_PRIVATE_KEY=<server-side key, optional>
+#   GENLAYER_CONTRACT_ADDRESS=0xbe1de3345603162554fcdff2b75cf4aa96c74329
+#   GENLAYER_NETWORK=testnetBradbury
+#   GENLAYER_RPC_URL=https://rpc-bradbury.genlayer.com
+#   GENLAYER_PRIVATE_KEY=<server-side key, configured only in a secret store>
 npm run dev
 ```
+
+`GENLAYER_PRIVATE_KEY` is required for the server-side API to submit live verification
+transactions. Store it only in a protected server/Vercel environment variable; never put
+it in source, `.env.example`, client code, or any `NEXT_PUBLIC_*` variable.
 
 ### 5. Integration tests (against Studio / testnet)
 
@@ -231,7 +263,7 @@ adjudication → consensus) → inspect per-requirement results, reasons, and ev
 contracts/AgentzProofVerifier.py   # the Intelligent Contract (core feature)
 deploy/deployScript.ts             # genlayer deploy script
 fixtures/                          # demo repos (buggy + correct password reset, research)
-tests/direct/                      # 22 in-memory contract tests (pass, fail, injection red-team, …)
+tests/direct/                      # 25 in-memory contract tests (pass, fail, injection red-team, …)
 tests/integration/                 # gltest end-to-end tests
 frontend/                          # Next.js 16 + TypeScript + Tailwind 4 app
   app/                             # pages + API routes

@@ -17,10 +17,10 @@ Open:
 Select the track:
 
 ```text
-Agents Commerce Infrastructure
+Agentic Infrastructure
 ```
 
-Do not select Future of Work.
+(Select the infrastructure track exactly as labelled on the portal — "Agentic Infrastructure" or "Agents Commerce Infrastructure". AgentzProof is a verification/proof layer that agents plug into, i.e. infrastructure for the agentic economy. Do not select Onchain Justice, which is about dispute arbitration.)
 
 ### Recommended fields
 
@@ -122,11 +122,18 @@ Use these terms accurately:
 
 AgentzProof uses deterministic checks first. Subjective requirements use the contract's leader/validator consensus pattern with `gl.vm.run_nondet_unsafe(leader_fn, validator_fn)` and structured JSON from `gl.nondet.exec_prompt(..., response_format="json")`. Natural-language reasoning is not a consensus key. Canonicalized web observations may use `gl.eq_principle.strict_eq`; LLM outputs must not be placed inside `strict_eq`.
 
+## Production status (verified)
+
+- Persistence: Vercel KV (`KV_REST_API_URL` / `KV_REST_API_TOKEN`) — reads and writes confirmed working.
+- Live verification: asynchronous submit → persist hash → client polls `/finalize`. Verified submitting a real GenLayer Bradbury transaction (tx `0x742ea85c…`).
+- Demo: simulated, no wallet required.
+- Do not redeploy the GenLayer contract; use the deployed address above.
+
 ## Final portal checklist
 
 Before clicking the portal's final Submit button:
 
-- [ ] Track is `Agents Commerce Infrastructure`.
+- [ ] Track is `Agentic Infrastructure` (exact portal label).
 - [ ] Project name and one-liner are correct.
 - [ ] Website opens successfully.
 - [ ] Demo opens and is labeled simulated.
@@ -136,9 +143,3 @@ Before clicking the portal's final Submit button:
 - [ ] Simulated results are not described as live transactions.
 - [ ] Any live transaction hash shown is copied from the actual application/network result.
 - [ ] Limitations are disclosed: Bradbury capacity, serverless persistence configuration, and testnet status.
-
-## Current Vercel deployment warning
-
-The Vercel deployment built from persistence commit `647622a` failed because `service.ts` imported `GenLayerCapacityError` while that commit's `frontend/lib/genlayer/verifier.ts` did not export it. The frontend-only compatibility fix is now included in the follow-up source change. Production is not fixed until the follow-up commit is pushed and its Vercel deployment is `Ready`.
-
-Before relying on live Create → Submit → Verify for judging, confirm that the corrected Vercel deployment is `Ready` and production is serving it. Do not redeploy the GenLayer contract.

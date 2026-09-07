@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AgentzProof — one-time Bradbury deployment</title>
+    <style>
+      :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+      body { max-width: 760px; margin: 48px auto; padding: 0 24px; background: #10131a; color: #f4f7fb; }
+      main { border: 1px solid #303846; border-radius: 14px; padding: 28px; background: #171c25; }
+      h1 { margin-top: 0; }
+      dl { display: grid; grid-template-columns: 150px 1fr; gap: 10px 18px; }
+      dt { color: #9ca9bc; }
+      dd { margin: 0; font-family: ui-monospace, monospace; }
+      button { margin-top: 24px; border: 0; border-radius: 8px; padding: 12px 18px; background: #65d39a; color: #07130d; font-weight: 700; cursor: pointer; }
+      button:disabled { cursor: wait; opacity: .65; }
+      #status { white-space: pre-wrap; color: #c6d0df; }
+      .warning { color: #ffd27d; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>AgentzProof one-time deployment</h1>
+      <p class="warning">Temporary harness only. This page is not part of the AgentzProof production UI.</p>
+      <dl>
+        <dt>Network</dt><dd>Bradbury</dd>
+        <dt>Chain ID</dt><dd>4221 (0x107d)</dd>
+        <dt>Contract</dt><dd>AgentzProofVerifier</dd>
+        <dt>Signing</dt><dd>Browser wallet only</dd>
+      </dl>
+      <p id="status">Deployment module loaded. No wallet request has been made.</p>
+      <button id="recover" type="button">Manually recover stale SUBMITTING state</button>
+      <button id="deploy" type="button">Connect wallet and continue</button>
+    </main>
+    <script type="module">
+      import {
+        deployAgentzProof,
+        recoverInterruptedDeployment,
+      } from "./deploy-browser.ts";
+
+      const recoverButton = document.querySelector("#recover");
+      const deployButton = document.querySelector("#deploy");
+      const status = document.querySelector("#status");
+
+      recoverButton.addEventListener("click", () => {
+        recoverButton.disabled = true;
+        try {
+          const result = recoverInterruptedDeployment();
+          status.textContent = JSON.stringify(result, null, 2);
+        } catch (error) {
+          status.textContent = `Recovery stopped: ${error instanceof Error ? error.message : String(error)}`;
+          recoverButton.disabled = false;
+        }
+      });
+
+      deployButton.addEventListener("click", async () => {
+        deployButton.disabled = true;
+        status.textContent = "Starting the explicitly requested deployment flow…";
+        try {
+          const result = await deployAgentzProof();
+          status.textContent = JSON.stringify(result, null, 2);
+        } catch (error) {
+          status.textContent = `Deployment stopped: ${error instanceof Error ? error.message : String(error)}`;
+          deployButton.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

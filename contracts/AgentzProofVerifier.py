@@ -21,22 +21,25 @@ A. DETERMINISTIC checks  — pure Python, byte-identical on every validator:
    - reported        : an app-verified fact (e.g. "test suite exited 0")
                        supplied by the requester as evidence
 
-B. WEB evidence       — non-deterministic (network) but converged by the
+B. WEB evidence       — non-deterministic (network) but canonicalized by the
    Equivalence Principle: every validator fetches the same evidence URLs via
-   gl.nondet.web.render inside a gl.eq_principle.strict_eq block, so they all
-   agree on one canonical web result before adjudication continues.
+   gl.nondet.web.render inside a strict_eq block that returns sorted, bounded
+   JSON. This strict_eq use is limited to web observations, never LLM output.
 
-C. SUBJECTIVE judgment — non-deterministic LLM reasoning, executed inside
-   gl.eq_principle.strict_eq so validators must converge on identical output.
+C. SUBJECTIVE judgment — non-deterministic LLM reasoning, executed with
+   gl.vm.run_nondet_unsafe(leader_fn, validator_fn). The leader and validator
+   independently evaluate the request; consensus compares only the stable
+   decision and per-requirement verdicts, never natural-language reasoning.
 
 Consensus-friendliness rules implemented here:
    * The LLM NEVER decides deterministic requirements. Deterministic facts are
-     ground truth passed to the LLM; it is instructed (and structurally
-     prevented) from changing them.
-   * The LLM outputs ONLY stable statuses ("PASS"/"FAIL" per subjective
-     requirement) — never free-form prose. Natural-language reasoning is
-     assembled deterministically by the contract, so validator outputs can
-     actually satisfy strict equality.
+     ground truth passed to the LLM; they are excluded from LLM adjudication
+     and remain authoritative in the final result.
+   * The leader returns structured JSON via exec_prompt(response_format="json").
+     Its schema is validated before the value is accepted.
+   * The validator independently runs the same evaluation and compares only
+     canonical decision fields: decision plus per-requirement PASS/FAIL values.
+     Natural-language reasoning is intentionally not compared.
    * All web content is truncated, treated as untrusted data, and never used
      to modify the verification instructions.
    * The verification instructions are built entirely by this contract; agent
@@ -59,7 +62,7 @@ Result schema (returned and stored on-chain)
   "verification_id": str,
   "verification_version": "1.0",
   "decision": "PASS" | "FAIL",
-  "score": float,                  # passed / total requirements
+  "score": float,                  # passed / total subjective requirements in the LLM response
   "requirements": [
     {
       "id": str, "requirement": str, "status": "PASS"|"FAIL",
@@ -69,7 +72,13 @@ Result schema (returned and stored on-chain)
   ],
   "evidence": [ {"source": str, "claim": str, "used": bool, "fetched": bool} ],
   "summary": str,
-  "consensus": { "method": "equivalence_principle", "principle": "strict_eq" }
+  "consensus": {
+    "method": "equivalence_principle",
+    "principle": "run_nondet_unsafe",
+    "judge": "genlayer_llm",
+    "web_evidence": "strict_eq",
+    "llm_adjudication": "leader_fn_validator_fn"
+  }
 }
 
 Author: AgentzProof team — GenLayer Agent Tank Hackathon 2026.
@@ -91,6 +100,72 @@ MAX_EVIDENCE_URLS = 5             # submitted evidence URLs to fetch
 MAX_WEB_CONTENT_CHARS = 4_000     # per-URL web excerpt passed to the LLM
 MAX_PROMPT_CHARS = 30_000         # total LLM prompt size cap
 MAX_REQUIREMENTS = 30             # acceptance criteria cap
+MAX_LLM_REASONING_CHARS = 2_000   # reasoning is informational only
+
+
+def _subjective_ids(subjective: list) -> list:
+    """Return subjective requirement ids in request order."""
+    return [str(req.get("id", "")) for req in subjective]
+
+
+def _stable_llm_fields(response, subjective: list):
+    """Validate an LLM response and return only consensus-stable fields.
+
+    Reasoning and score are validated for shape but intentionally omitted from
+    the returned fingerprint: natural-language explanations are not required to
+    match between independent validators.
+    """
+    if not isinstance(response, dict):
+        return None
+
+    decision = str(response.get("decision", "")).upper()
+    if decision not in ("PASS", "FAIL"):
+        return None
+
+    raw_requirements = response.get("requirements")
+    if not isinstance(raw_requirements, dict):
+        return None
+
+    ids = _subjective_ids(subjective)
+    if set(raw_requirements.keys()) != set(ids):
+        return None
+
+    requirements = {}
+    for req_id in ids:
+        status = str(raw_requirements.get(req_id, "")).upper()
+        if status not in ("PASS", "FAIL"):
+            return None
+        requirements[req_id] = status
+
+    expected_decision = (
+        "PASS" if ids and all(status == "PASS" for status in requirements.values()) else "FAIL"
+    )
+    if decision != expected_decision:
+        return None
+
+    score = response.get("score")
+    if isinstance(score, bool):
+        return None
+    try:
+        score_value = float(str(score).strip())
+    except (TypeError, ValueError):
+        return None
+    if score_value < 0.0 or score_value > 1.0:
+        return None
+
+    reasoning = response.get("reasoning")
+    if not isinstance(reasoning, str) or len(reasoning) > MAX_LLM_REASONING_CHARS:
+        return None
+
+    return {
+        "decision": decision,
+        "requirements": requirements,
+    }
+
+
+def _validate_llm_response(response, subjective: list):
+    """Validate a complete structured LLM response."""
+    return _stable_llm_fields(response, subjective)
 
 
 @allow_storage
@@ -147,7 +222,7 @@ class AgentzProofVerifier(gl.Contract):
                 },
             }
 
-        # C. Subjective adjudication — LLM inside strict_eq, stable JSON out.
+        # C. Subjective adjudication — custom leader/validator consensus.
         llm_verdicts = self._adjudicate_subjective(request, det_results, web)
 
         result = self._assemble_result(
@@ -186,7 +261,10 @@ class AgentzProofVerifier(gl.Contract):
                 "name": "AgentzProofVerifier",
                 "purpose": "Decentralized verification of AI-agent work",
                 "verification_version": "1.0",
-                "consensus": "equivalence_principle (strict_eq)",
+                "consensus": (
+                    "equivalence_principle: web evidence strict_eq; "
+                    "LLM adjudication run_nondet_unsafe"
+                ),
                 "deterministic_checks": [
                     "string_present",
                     "regex",
@@ -279,10 +357,11 @@ class AgentzProofVerifier(gl.Contract):
     # B. Web evidence — converged via Equivalence Principle
     # ------------------------------------------------------------------
     def _fetch_web_evidence(self, request: dict) -> dict:
-        """Fetch evidence URLs + http_status checks inside strict_eq.
+        """Fetch web evidence and return a canonical, bounded JSON snapshot.
 
-        Every validator runs this same block, so all validators agree on the
-        exact web content and reachability before adjudication continues.
+        ``strict_eq`` is used here only because ``collect`` returns a sorted,
+        size-capped representation of objective web observations. LLM calls
+        never execute inside this block.
         """
         urls = [
             str(u)
@@ -297,6 +376,9 @@ class AgentzProofVerifier(gl.Contract):
                 http_checks.append(
                     {"id": str(req.get("id", "")), "url": str(check.get("url", ""))}
                 )
+
+        if not urls and not http_checks:
+            return {"urls": {}, "http": {}}
 
         def collect() -> str:
             out: dict = {"urls": {}, "http": {}}
@@ -326,19 +408,31 @@ class AgentzProofVerifier(gl.Contract):
             raw = gl.eq_principle.strict_eq(collect)
             return json.loads(raw)
         except Exception:
-            return {"urls": {}, "http": {}}
+            # A failed canonical web consensus must not turn an http_status
+            # requirement into an LLM-adjudicated requirement. Preserve every
+            # requested HTTP check as deterministic ground-truth failure.
+            return {
+                "urls": {},
+                "http": {
+                    str(check["id"]): {
+                        "ok": False,
+                        "url": str(check["url"])[:200],
+                    }
+                    for check in http_checks
+                },
+            }
 
     # ------------------------------------------------------------------
-    # C. Subjective adjudication — LLM under strict equality
+    # C. Subjective adjudication — LLM under custom consensus
     # ------------------------------------------------------------------
     def _adjudicate_subjective(
         self, request: dict, det_results: dict, web: dict
     ) -> dict:
         """Ask the LLM to judge only subjective requirements.
 
-        Returns {"verdicts": {req_id: "PASS"|"FAIL"}, ...}. The prompt and the
-        deterministic facts are fixed before the eq block; the LLM only emits
-        stable statuses, so validators can reach strict equality.
+        The leader and validator both call the LLM independently. The leader's
+        structured response is accepted only when the validator agrees on the
+        stable decision fields; reasoning text is deliberately ignored.
         """
         requirements = request.get("requirements", [])
         subjective = [
@@ -351,16 +445,35 @@ class AgentzProofVerifier(gl.Contract):
 
         prompt = self._build_judge_prompt(request, det_results, web, subjective)
 
-        def judge() -> str:
+        def leader_fn() -> dict:
+            result = gl.nondet.exec_prompt(prompt, response_format="json")
+            stable = _validate_llm_response(result, subjective)
+            if stable is None:
+                raise gl.vm.UserError("LLM response failed schema validation")
+            # Return only calldata-safe JSON types across the nondeterministic
+            # boundary; score is informational and is not in the fingerprint.
+            return {
+                "decision": result["decision"],
+                "requirements": result["requirements"],
+                "score": "{:.4f}".format(float(result["score"])),
+                "reasoning": str(result["reasoning"])[:MAX_LLM_REASONING_CHARS],
+            }
+
+        def validator_fn(leader_result) -> bool:
+            if not isinstance(leader_result, gl.vm.Return):
+                return False
+            leader_stable = _stable_llm_fields(leader_result.calldata, subjective)
+            if leader_stable is None:
+                return False
             try:
-                result = gl.nondet.exec_prompt(prompt, response_format="json")
+                validator_response = leader_fn()
             except Exception:
-                result = {"error": "adjudication_unavailable"}
-            return json.dumps(result, sort_keys=True)
+                return False
+            validator_stable = _stable_llm_fields(validator_response, subjective)
+            return validator_stable is not None and validator_stable == leader_stable
 
         try:
-            raw = gl.eq_principle.strict_eq(judge)
-            parsed = json.loads(raw)
+            parsed = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
         except Exception:
             parsed = {}
         return self._sanitize_verdicts(parsed, subjective)
@@ -377,8 +490,8 @@ class AgentzProofVerifier(gl.Contract):
         lines: list = []
         lines.append(
             "You are an independent verifier in the AGENTZPROOF verification "
-            "network. Your output is compared verbatim with other independent "
-            "validators, so respond with ONLY stable facts."
+            "network. Return a structured JSON evaluation. Validators compare "
+            "only decision fields; your reasoning may differ."
         )
         lines.append("")
         lines.append("=== GROUND TRUTH (deterministic, verified by the contract) ===")
@@ -429,8 +542,10 @@ class AgentzProofVerifier(gl.Contract):
         )
         lines.append(
             "4. Respond with EXACTLY this JSON and nothing else — no prose, "
-            "no markdown fences:\n"
-            '{"verdicts": {"REQ-1": "PASS"}}'
+            "no markdown fences. The requirements object must contain every "
+            "subjective requirement id:\n"
+            '{"decision": "PASS", "requirements": {"REQ-1": "PASS"}, '
+            '"score": 1.0, "reasoning": "..."}'
         )
         prompt = "\n".join(lines)
         return prompt[:MAX_PROMPT_CHARS]
@@ -442,17 +557,10 @@ class AgentzProofVerifier(gl.Contract):
         else. Anything outside the expected shape is discarded and the
         requirement is treated as failed by the caller.
         """
-        if not isinstance(parsed, dict):
+        stable = _stable_llm_fields(parsed, subjective)
+        if stable is None:
             return {"verdicts": {}, "note": "malformed_llm_output"}
-        raw_verdicts = parsed.get("verdicts")
-        if not isinstance(raw_verdicts, dict):
-            return {"verdicts": {}, "note": "malformed_llm_output"}
-        valid_ids = {str(r.get("id", "")) for r in subjective}
-        verdicts: dict = {}
-        for req_id, verdict in raw_verdicts.items():
-            if req_id in valid_ids and str(verdict).upper() in ("PASS", "FAIL"):
-                verdicts[req_id] = str(verdict).upper()
-        return {"verdicts": verdicts}
+        return {"verdicts": stable["requirements"]}
 
     # ------------------------------------------------------------------
     # Result assembly (deterministic — stable across validators)
@@ -565,8 +673,10 @@ class AgentzProofVerifier(gl.Contract):
             "summary": summary,
             "consensus": {
                 "method": "equivalence_principle",
-                "principle": "strict_eq",
+                "principle": "run_nondet_unsafe",
                 "judge": "genlayer_llm",
+                "web_evidence": "strict_eq",
+                "llm_adjudication": "leader_fn_validator_fn",
             },
         }
 
