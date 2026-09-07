@@ -3,10 +3,11 @@ import { runVerify, ValidationError, getGenLayerConfig } from "@/lib/verifier/se
 
 export const runtime = "nodejs";
 
-export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   try {
-    const { result } = await runVerify(id);
+    const body = await req.json().catch(() => ({}));
+    const { result } = await runVerify(id, body?.verification);
     return NextResponse.json({
       result,
       mode: result.mode,

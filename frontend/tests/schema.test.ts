@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { validateResultSchema } from "@/lib/verifier/schema";
 import { sanitizeRequirements, sanitizeEvidenceUrls, ValidationError } from "@/lib/verifier/service";
 import { toOnChainRequestJson } from "@/lib/verifier/serialize";
+import { createVerification, restoreVerification } from "@/lib/verifier/service";
+import { VerificationStore, type VerificationPersistence } from "@/lib/store/verification-store";
 import type { VerificationResult } from "@/lib/types";
 
 function validResult(): VerificationResult {
@@ -21,7 +23,13 @@ function validResult(): VerificationResult {
     ],
     evidence: [{ source: "test", claim: "exit 0", used: true, fetched: false }],
     summary: "1 of 1 requirements satisfied. Decision: PASS.",
-    consensus: { method: "equivalence_principle", principle: "strict_eq", judge: "genlayer_llm" },
+    consensus: {
+      method: "equivalence_principle",
+      principle: "run_nondet_unsafe",
+      judge: "genlayer_llm",
+      webEvidence: "strict_eq",
+      llmAdjudication: "leader_fn_validator_fn",
+    },
     mode: "demo",
     verifiedAt: "2026-09-05T00:00:00Z",
   };
@@ -93,6 +101,51 @@ describe("request sanitization", () => {
       "http://example.com/two",
     ]);
     expect(urls).toEqual(["https://example.com/ok", "http://example.com/two"]);
+  });
+});
+
+describe("verification handoff", () => {
+  it("restores a newly-created OPEN verification for a separate submit request", async () => {
+    const created = await createVerification({
+      title: "Password Reset Security",
+      description: "Implement a secure reset flow.",
+      task: "Implement a secure reset flow.",
+      requirements: [{ id: "REQ-1", text: "Expired tokens are rejected." }],
+    });
+    const restored = await restoreVerification(created.id, created, ["OPEN"]);
+    expect(restored?.id).toBe(created.id);
+    expect(restored?.title).toBe("Password Reset Security");
+    expect(restored?.status).toBe("OPEN");
+  });
+
+  it("rejects a handoff snapshot with a different id or unsafe status", async () => {
+    const created = await createVerification({
+      title: "A",
+      requirements: [{ text: "B" }],
+    });
+    expect(await restoreVerification("wrong-id", created, ["OPEN"])).toBeUndefined();
+    expect(await restoreVerification(created.id, { ...created, status: "PASSED" }, ["OPEN"])).toBeUndefined();
+  });
+});
+
+describe("durable store contexts", () => {
+  it("shares records and updates across separate store instances", async () => {
+    const records = new Map<string, VerificationResult["tx"] | unknown>();
+    const backend: VerificationPersistence = {
+      async get(id) { return records.get(id) as Awaited<ReturnType<VerificationStore["get"]>>; },
+      async put(value) { records.set(value.id, value); },
+      async list() { return Array.from(records.values()) as Awaited<ReturnType<VerificationStore["list"]>>; },
+    };
+    const first = new VerificationStore(backend);
+    const second = new VerificationStore(backend);
+    const created = await createVerification({ title: "Cross-context proof", requirements: [{ text: "A" }] });
+    await first.create(created);
+    const fromSecond = await second.get(created.id);
+    expect(fromSecond?.id).toBe(created.id);
+    const updated = await second.update(created.id, { status: "SUBMITTED", result: validResult() });
+    expect((await first.get(created.id))?.status).toBe("SUBMITTED");
+    expect(updated?.result?.tx).toBeUndefined();
+    expect((await second.get(created.id))?.result?.decision).toBe("PASS");
   });
 });
 

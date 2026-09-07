@@ -1,44 +1,8 @@
 import type { Metadata } from "next";
 import { DemoPicker } from "@/components/DemoPicker";
 
-export const metadata: Metadata = {
-  title: "Live Demo — AgentzProof",
-  description: "Run a built-in verification demo: a buggy password-reset implementation (FAIL) and a corrected one (PASS), adjudicated like the real thing.",
-};
+export const metadata: Metadata = { title: "Live Demo — AgentzProof", description: "See AgentzProof catch a subtle bug in an AI-generated password-reset implementation." };
 
 export default function DemoPage() {
-  return (
-    <div className="mx-auto max-w-4xl px-5 py-14">
-      <div className="mb-10 text-center">
-        <p className="font-mono text-xs text-cyan-400">/demo</p>
-        <h1 className="mt-2 text-3xl font-bold tracking-tight text-white">
-          Live demo
-        </h1>
-        <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-slate-400">
-          Pick a scenario. The agent simulator will submit the work, and
-          AgentzProof will verify it against the original acceptance criteria —
-          deterministic checks first, GenLayer adjudication for the rest.
-        </p>
-      </div>
-
-      <DemoPicker />
-
-      <div className="card mt-10 border-cyan-400/20 p-6">
-        <h2 className="text-sm font-semibold text-white">What you&apos;ll see</h2>
-        <ol className="mt-3 space-y-2 text-sm text-slate-400">
-          <li className="flex gap-2"><span className="text-cyan-300">1.</span> The original acceptance criteria</li>
-          <li className="flex gap-2"><span className="text-cyan-300">2.</span> The submitted deliverable + evidence</li>
-          <li className="flex gap-2"><span className="text-cyan-300">3.</span> Deterministic checks — real, run against the submission</li>
-          <li className="flex gap-2"><span className="text-cyan-300">4.</span> GenLayer adjudication & consensus (demo mode unless the contract is deployed)</li>
-          <li className="flex gap-2"><span className="text-cyan-300">5.</span> PASS / FAIL with per-requirement reasons and evidence used</li>
-        </ol>
-        <p className="mt-4 rounded-lg border border-white/5 bg-black/30 px-4 py-3 text-xs leading-relaxed text-slate-500">
-          Demo mode runs the same deterministic checks and structured
-          adjudication the on-chain contract performs, but does not require a
-          deployed contract, wallet, or funds. The result panel always labels
-          the source honestly. Deploy the contract (see README) to run LIVE.
-        </p>
-      </div>
-    </div>
-  );
+  return <div className="mx-auto max-w-5xl px-5 py-12 md:py-16"><div className="mb-10 max-w-3xl"><div className="inline-flex items-center gap-2 rounded-full border border-[#f4b39b] bg-[#fff0ea] px-3 py-1 font-mono text-[11px] font-bold text-[#df4f1f]"><span className="h-1.5 w-1.5 rounded-full bg-[#ff6b35]" />LIVE VERIFICATION DEMO</div><h1 className="mt-4 text-4xl font-bold tracking-tight text-[#202124]">See AgentzProof catch a subtle bug.</h1><p className="mt-4 max-w-2xl text-lg leading-relaxed text-[#6f6b64]">Watch an AI-generated password-reset implementation move through evidence review, deterministic checks, and GenLayer consensus.</p></div><DemoPicker /><div className="card mt-10 p-6"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="font-bold text-[#202124]">What the demo shows</h2><p className="mt-1 text-sm text-[#6f6b64]">The scenarios use the real application logic and label demo results honestly.</p></div><span className="rounded-full border border-[#d8d2c7] bg-[#f5f3ef] px-3 py-1 text-xs font-bold text-[#6f6b64]">NO WALLET REQUIRED</span></div><div className="mt-5 grid gap-3 sm:grid-cols-5">{["Evidence received","Deterministic checks","GenLayer validators","Consensus","Final decision"].map((step, i)=><div key={step} className="rounded-xl border border-[#e8e4dc] bg-[#fbfaf7] p-3"><span className="font-mono text-xs font-bold text-[#ff6b35]">0{i+1}</span><p className="mt-2 text-sm font-semibold text-[#202124]">{step}</p></div>)}</div></div></div>;
 }

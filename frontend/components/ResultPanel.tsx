@@ -1,177 +1,23 @@
 "use client";
 
+import { useState } from "react";
 import type { VerificationResult } from "@/lib/types";
 import { DecisionBadge, ModeBadge } from "@/components/StatusBadge";
 import { RequirementList } from "@/components/RequirementList";
 
-interface Props {
-  result: VerificationResult;
-  requirements: { id: string; text: string }[];
-}
+interface Props { result: VerificationResult; requirements: { id: string; text: string }[]; }
+function shortHash(value: string) { return `${value.slice(0, 10)}…${value.slice(-8)}`; }
 
 export function ResultPanel({ result, requirements }: Props) {
+  const [copied, setCopied] = useState(false);
   const passed = result.requirements.filter((r) => r.status === "PASS").length;
   const total = result.requirements.length;
-
-  return (
-    <div className="space-y-5">
-      {/* Decision banner */}
-      <div
-        className={`card relative overflow-hidden p-6 ${
-          result.decision === "PASS" ? "glow-cyan" : ""
-        }`}
-      >
-        <div
-          className={`pointer-events-none absolute inset-0 ${
-            result.decision === "PASS"
-              ? "bg-gradient-to-br from-emerald-500/10 via-transparent to-cyan-500/10"
-              : "bg-gradient-to-br from-rose-500/10 via-transparent to-orange-500/10"
-          }`}
-        />
-        <div className="relative flex flex-col items-center gap-3 text-center">
-          <div className="flex items-center gap-3">
-            <DecisionBadge decision={result.decision} />
-            <ModeBadge mode={result.mode} />
-          </div>
-          <p className="text-2xl font-bold tracking-tight">
-            <span className={result.decision === "PASS" ? "gradient-text-green" : "gradient-text-red"}>
-              {result.decision === "PASS" ? "VERIFICATION COMPLETE — PASS" : "VERIFICATION COMPLETE — FAIL"}
-            </span>
-          </p>
-          <p className="max-w-lg text-sm text-slate-400">{result.summary}</p>
-
-          {/* score */}
-          <div className="mt-1 w-full max-w-sm">
-            <div className="mb-1 flex justify-between font-mono text-xs text-slate-500">
-              <span>REQUIREMENT SCORE</span>
-              <span className="text-slate-300">
-                {passed}/{total} · {Math.round(result.score * 100)}%
-              </span>
-            </div>
-            <div className="h-2 overflow-hidden rounded-full bg-white/5">
-              <div
-                className={`h-full rounded-full transition-all duration-700 ${
-                  result.decision === "PASS"
-                    ? "bg-gradient-to-r from-emerald-400 to-cyan-400"
-                    : "bg-gradient-to-r from-rose-400 to-orange-400"
-                }`}
-                style={{ width: `${Math.max(result.score * 100, 4)}%` }}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* GenLayer / tx info */}
-      <div className="card p-5">
-        <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-400">
-          Adjudication & on-chain information
-        </h3>
-        <dl className="grid gap-3 font-mono text-xs sm:grid-cols-2">
-          <div className="rounded-lg border border-white/5 bg-black/20 p-3">
-            <dt className="text-slate-500">METHOD</dt>
-            <dd className="mt-1 text-slate-200">{result.consensus.method}</dd>
-          </div>
-          <div className="rounded-lg border border-white/5 bg-black/20 p-3">
-            <dt className="text-slate-500">PRINCIPLE</dt>
-            <dd className="mt-1 text-slate-200">{result.consensus.principle}</dd>
-          </div>
-          <div className="rounded-lg border border-white/5 bg-black/20 p-3">
-            <dt className="text-slate-500">JUDGE</dt>
-            <dd className="mt-1 text-slate-200">{result.consensus.judge}</dd>
-          </div>
-          <div className="rounded-lg border border-white/5 bg-black/20 p-3">
-            <dt className="text-slate-500">VERIFICATION VERSION</dt>
-            <dd className="mt-1 text-slate-200">{result.verificationVersion}</dd>
-          </div>
-          {result.tx ? (
-            <>
-              <div className="rounded-lg border border-white/5 bg-black/20 p-3 sm:col-span-2">
-                <dt className="text-slate-500">CONTRACT ADDRESS</dt>
-                <dd className="mt-1 break-all text-violet-300">{result.tx.contractAddress}</dd>
-              </div>
-              <div className="rounded-lg border border-white/5 bg-black/20 p-3 sm:col-span-2">
-                <dt className="text-slate-500">TRANSACTION HASH</dt>
-                <dd className="mt-1 break-all text-cyan-300">
-                  {result.tx.transactionHash}
-                  {result.tx.explorerUrl && (
-                    <a
-                      href={result.tx.explorerUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="ml-2 text-slate-400 underline hover:text-white"
-                    >
-                      explorer ↗
-                    </a>
-                  )}
-                </dd>
-              </div>
-              <div className="rounded-lg border border-white/5 bg-black/20 p-3">
-                <dt className="text-slate-500">NETWORK</dt>
-                <dd className="mt-1 text-slate-200">{result.tx.network}</dd>
-              </div>
-              <div className="rounded-lg border border-white/5 bg-black/20 p-3">
-                <dt className="text-slate-500">STATUS</dt>
-                <dd className="mt-1 text-emerald-300">{result.tx.status}</dd>
-              </div>
-            </>
-          ) : (
-            <div className="rounded-lg border border-dashed border-slate-600/40 bg-black/20 p-3 sm:col-span-2">
-              <dt className="text-slate-500">ON-CHAIN STATUS</dt>
-              <dd className="mt-1 text-amber-300">
-                Not deployed — simulated adjudication (DEMO MODE). Deploy the
-                contract and set GENLAYER_CONTRACT_ADDRESS for live consensus.
-              </dd>
-            </div>
-          )}
-          <div className="rounded-lg border border-white/5 bg-black/20 p-3 sm:col-span-2">
-            <dt className="text-slate-500">VERIFIED AT</dt>
-            <dd className="mt-1 text-slate-200">
-              {new Date(result.verifiedAt).toISOString()}
-            </dd>
-          </div>
-        </dl>
-      </div>
-
-      {/* Requirement-by-requirement */}
-      <div className="card p-5">
-        <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-400">
-          Requirement-by-requirement results
-        </h3>
-        <RequirementList requirements={requirements} results={result.requirements} />
-      </div>
-
-      {/* Evidence */}
-      <div className="card p-5">
-        <h3 className="mb-3 text-xs font-semibold uppercase tracking-widest text-slate-400">
-          Evidence used
-        </h3>
-        <ul className="space-y-2">
-          {result.evidence.map((e, i) => (
-            <li
-              key={i}
-              className="flex items-start gap-3 rounded-lg border border-white/5 bg-black/20 px-4 py-3"
-            >
-              <span
-                className={`mt-0.5 shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] ${
-                  e.used
-                    ? "border border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-                    : "border border-slate-600/40 bg-slate-600/10 text-slate-400"
-                }`}
-              >
-                {e.used ? "USED" : "NOT USED"}
-              </span>
-              <div className="min-w-0">
-                <p className="break-all font-mono text-xs text-slate-300">{e.source}</p>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  {e.claim}
-                  {e.fetched && <span className="ml-1.5 text-cyan-400">[fetched]</span>}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
+  const copyProof = async () => { await navigator.clipboard?.writeText(JSON.stringify(result)); setCopied(true); setTimeout(() => setCopied(false), 1600); };
+  return <div className="space-y-5">
+    <div className={`proof-card relative overflow-hidden ${result.decision === "PASS" ? "border-[#a9d7bd]" : "border-[#efb8b0]"}`}><div className={`absolute inset-x-0 top-0 h-1 ${result.decision === "PASS" ? "bg-[var(--green)]" : "bg-[var(--red)]"}`} /><div className="relative flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between"><div><div className="mb-3 flex flex-wrap items-center gap-2"><span className="eyebrow">AgentzProof · proof record</span><ModeBadge mode={result.mode} /></div><h2 className={`text-3xl font-bold tracking-tight ${result.decision === "PASS" ? "text-[var(--green)]" : "text-[var(--red)]"}`}>{result.decision === "PASS" ? "VERIFIED" : "VERIFICATION FAILED"}</h2><p className="mt-2 max-w-xl text-sm leading-relaxed text-[var(--muted)]">{result.summary}</p></div><DecisionBadge decision={result.decision} /></div><div className="mt-6 flex items-end justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-[var(--muted)]">Requirements checked</p><p className="mt-1 text-2xl font-bold">{passed} <span className="text-base font-normal text-[var(--soft-muted)]">/ {total} passed</span></p></div><span className="font-mono text-sm text-[var(--muted)]">{Math.round(result.score * 100)}%</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--surface-muted)]" role="progressbar" aria-valuenow={Math.round(result.score * 100)} aria-valuemin={0} aria-valuemax={100}><div className={`h-full rounded-full ${result.decision === "PASS" ? "bg-[var(--green)]" : "bg-[var(--red)]"}`} style={{ width: `${Math.max(result.score * 100, 4)}%` }} /></div></div>
+    <div className="proof-card"><div className="mb-4 flex items-center justify-between"><div><p className="eyebrow">Proof details</p><h3 className="mt-2 text-lg font-bold">Independently inspect the result</h3></div>{result.tx ? <span className="status-badge status-live">BRADBURY · 4221</span> : <ModeBadge mode="demo" />}</div><div className="proof-meta"><div className="proof-meta-item"><div className="proof-meta-label">VERIFICATION ID</div><div className="proof-meta-value">{result.verificationId}</div></div><div className="proof-meta-item"><div className="proof-meta-label">VERIFIED BY</div><div className="proof-meta-value">GenLayer Intelligent Contract</div></div><div className="proof-meta-item"><div className="proof-meta-label">NETWORK</div><div className="proof-meta-value">{result.tx?.network ?? "Bradbury · demo"}</div></div><div className="proof-meta-item"><div className="proof-meta-label">CONTRACT</div><div className="proof-meta-value">{result.tx?.contractAddress ?? "Not used in demo"}</div></div>{result.tx && <div className="proof-meta-item sm:col-span-2"><div className="proof-meta-label">TRANSACTION</div><div className="proof-meta-value text-[var(--orange-dark)]">{shortHash(result.tx.transactionHash)}{result.tx.explorerUrl && <a href={result.tx.explorerUrl} target="_blank" rel="noreferrer" className="ml-2 underline">View transaction ↗</a>}</div></div>}</div><div className="mt-5 flex flex-wrap gap-2"><button type="button" onClick={copyProof} className="btn-secondary !min-h-[38px] !py-2 text-xs">{copied ? "Copied proof" : "Copy proof"}</button>{result.tx?.explorerUrl && <a className="btn-secondary !min-h-[38px] !py-2 text-xs" href={result.tx.explorerUrl} target="_blank" rel="noreferrer">View transaction ↗</a>}<button type="button" onClick={() => navigator.share?.({ title: "AgentzProof result", text: `${result.decision} · ${result.verificationId}`, url: window.location.href })} className="btn-secondary !min-h-[38px] !py-2 text-xs">Share proof</button></div></div>
+    <div className="proof-card"><p className="eyebrow">Requirements</p><h3 className="mt-2 mb-4 text-lg font-bold">What was checked</h3><RequirementList requirements={requirements} results={result.requirements} /></div>
+    <div className="proof-card"><p className="eyebrow">Evidence used</p><h3 className="mt-2 mb-4 text-lg font-bold">Supporting material</h3><ul className="space-y-2">{result.evidence.map((e, i) => <li key={i} className="flex items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3"><span className={`status-badge ${e.used ? "status-success" : "status-neutral"}`}>{e.used ? "USED" : "NOT USED"}</span><div className="min-w-0"><p className="break-all font-mono text-xs text-[var(--text)]">{e.source}</p><p className="mt-1 text-xs text-[var(--muted)]">{e.claim}{e.fetched && <span className="ml-1.5 text-[var(--orange-dark)]">· fetched</span>}</p></div></li>)}</ul></div>
+    <details className="proof-card"><summary className="cursor-pointer text-sm font-bold">Consensus metadata</summary><dl className="mt-4 grid gap-3 font-mono text-xs sm:grid-cols-2"><div className="proof-meta-item"><dt className="proof-meta-label">METHOD</dt><dd className="proof-meta-value">{result.consensus.method}</dd></div><div className="proof-meta-item"><dt className="proof-meta-label">PRINCIPLE</dt><dd className="proof-meta-value">{result.consensus.principle}</dd></div><div className="proof-meta-item"><dt className="proof-meta-label">JUDGE</dt><dd className="proof-meta-value">{result.consensus.judge}</dd></div><div className="proof-meta-item"><dt className="proof-meta-label">VERSION</dt><dd className="proof-meta-value">{result.verificationVersion}</dd></div></dl></details>
+  </div>;
 }

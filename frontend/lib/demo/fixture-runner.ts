@@ -30,8 +30,14 @@ export function runFixtureTestSuite(variant: "buggy" | "correct"): FixtureTestRe
     timeout: 20_000,
     encoding: "utf-8",
   });
-  if (res.error) {
-    return { exitCode: null, output: String(res.error.message ?? "failed to run"), ran: false };
+  if (
+    res.error ||
+    res.status === 9009 ||
+    /python(?:3)? was not found|python(?:3)?.*not found|Microsoft Store/i.test(
+      `${res.stdout ?? ""}\n${res.stderr ?? ""}`,
+    )
+  ) {
+    return { exitCode: null, output: String(res.error?.message ?? "python3 unavailable"), ran: false };
   }
   return {
     exitCode: res.status ?? null,

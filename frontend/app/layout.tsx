@@ -4,60 +4,21 @@ import "./globals.css";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 
-const geistSans = Geist({
-  variable: "--font-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-mono",
-  subsets: ["latin"],
-});
+const geistSans = Geist({ variable: "--font-sans", subsets: ["latin"] });
+const geistMono = Geist_Mono({ variable: "--font-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "AgentzProof — Proof for the Agentic Economy",
-  description:
-    "Independent verification for AI-agent work, powered by GenLayer. AI agents can do the work. AgentzProof verifies it.",
-  keywords: [
-    "agent verification",
-    "AI agents",
-    "GenLayer",
-    "intelligent contracts",
-    "decentralized verification",
-    "agentic economy",
-  ],
+  title: "AgentzProof — AI work, independently verified",
+  description: "Independent verification of AI-agent deliverables using deterministic checks and GenLayer consensus.",
+  keywords: ["agent verification", "AI agents", "GenLayer", "intelligent contracts", "agentic economy"],
   metadataBase: new URL("https://agentzproof.xyz"),
-  openGraph: {
-    title: "AgentzProof — Proof for the Agentic Economy",
-    description:
-      "Independent verification for AI-agent work, powered by GenLayer.",
-    url: "https://agentzproof.xyz",
-    siteName: "AgentzProof",
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "AgentzProof — Proof for the Agentic Economy",
-    description: "Independent verification for AI-agent work, powered by GenLayer.",
-  },
+  openGraph: { title: "AgentzProof — AI work, independently verified", description: "AI agents do the work. AgentzProof proves it.", url: "https://agentzproof.xyz", siteName: "AgentzProof", type: "website" },
+  twitter: { card: "summary_large_image", title: "AgentzProof — AI work, independently verified", description: "Independent verification of AI-agent deliverables using GenLayer consensus." },
   robots: { index: true, follow: true },
 };
 
-export const viewport: Viewport = {
-  themeColor: "#05060c",
-  colorScheme: "dark",
-};
+export const viewport: Viewport = { themeColor: "#fbfaf7", colorScheme: "light" };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
-  return (
-    <html lang="en" className="dark">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <Navbar />
-        <main className="min-h-screen">{children}</main>
-        <Footer />
-      </body>
-    </html>
-  );
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  return <html lang="en"><body className={`${geistSans.variable} ${geistMono.variable}` }><Navbar /><main className="min-h-screen">{children}</main><Footer /></body></html>;
 }

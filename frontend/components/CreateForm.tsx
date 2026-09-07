@@ -2,228 +2,40 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { saveVerificationHandoff } from "@/lib/client/verification-handoff";
 
 const CHECK_TYPES = [
-  { value: "", label: "No check (LLM adjudicates)" },
-  { value: "string_present", label: "String must be present" },
-  { value: "function_exists", label: "Function must exist" },
-  { value: "regex", label: "Pattern must match" },
-  { value: "file_exists", label: "File must be in manifest" },
-  { value: "http_status", label: "URL must be reachable" },
-];
+  { value: "", label: "No check · GenLayer judgment", help: "GenLayer independently evaluates this requirement." },
+  { value: "string_present", label: "String must be present", valueLabel: "Expected string", placeholder: "e.g. expires_at" },
+  { value: "function_exists", label: "Function must exist", valueLabel: "Function name", placeholder: "e.g. reset_password" },
+  { value: "regex", label: "Pattern must match", valueLabel: "Pattern", placeholder: "e.g. token.{0,20}expires" },
+  { value: "file_exists", label: "File must be in manifest", valueLabel: "File path", placeholder: "e.g. tests/test_password_reset.py" },
+  { value: "http_status", label: "URL must be reachable", valueLabel: "URL", placeholder: "https://…" },
+] as const;
 
-interface Row {
-  id: number;
-  text: string;
-  checkType: string;
-  checkValue: string;
-}
+interface Row { id: number; text: string; checkType: string; checkValue: string; }
 
 export function CreateForm() {
   const router = useRouter();
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [creator, setCreator] = useState("");
-  const [agent, setAgent] = useState("");
-  const [reward, setReward] = useState("");
-  const [deadline, setDeadline] = useState("");
-  const [rows, setRows] = useState<Row[]>([{ id: 1, text: "", checkType: "", checkValue: "" }]);
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  function updateRow(id: number, patch: Partial<Row>) {
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-  }
-
-  function addRow() {
-    setRows((rs) => [...rs, { id: Date.now(), text: "", checkType: "", checkValue: "" }]);
-  }
-
-  function removeRow(id: number) {
-    setRows((rs) => rs.filter((r) => r.id !== id));
-  }
-
+  const [title, setTitle] = useState(""); const [description, setDescription] = useState(""); const [creator, setCreator] = useState(""); const [agent, setAgent] = useState(""); const [reward, setReward] = useState(""); const [deadline, setDeadline] = useState("");
+  const [rows, setRows] = useState<Row[]>([{ id: 1, text: "", checkType: "", checkValue: "" }]); const [error, setError] = useState<string | null>(null); const [submitting, setSubmitting] = useState(false);
+  function updateRow(id: number, patch: Partial<Row>) { setRows((rs) => rs.map((r) => r.id === id ? { ...r, ...patch } : r)); }
+  function addRow() { setRows((rs) => [...rs, { id: Date.now(), text: "", checkType: "", checkValue: "" }]); }
+  function removeRow(id: number) { setRows((rs) => rs.filter((r) => r.id !== id)); }
   async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    const criteria = rows
-      .filter((r) => r.text.trim())
-      .map((r, i) => {
-        const check = (() => {
-          switch (r.checkType) {
-            case "string_present":
-              return { type: "string_present" as const, needle: r.checkValue.trim() || r.text.trim() };
-            case "function_exists":
-              return { type: "function_exists" as const, name: r.checkValue.trim() || "main" };
-            case "regex":
-              return { type: "regex" as const, pattern: r.checkValue.trim() || "." };
-            case "file_exists":
-              return { type: "file_exists" as const, path: r.checkValue.trim() };
-            case "http_status":
-              return { type: "http_status" as const, url: r.checkValue.trim() };
-            default:
-              return undefined;
-          }
-        })();
-        return { id: `REQ-${i + 1}`, text: r.text.trim(), check };
-      });
-
-    if (!title.trim()) {
-      setError("Task name is required.");
-      return;
-    }
-    if (criteria.length === 0) {
-      setError("At least one acceptance criterion is required.");
-      return;
-    }
-
+    e.preventDefault(); setError(null);
+    const criteria = rows.filter((r) => r.text.trim()).map((r, i) => { const check = (() => { switch (r.checkType) { case "string_present": return { type: "string_present" as const, needle: r.checkValue.trim() || r.text.trim() }; case "function_exists": return { type: "function_exists" as const, name: r.checkValue.trim() || "main" }; case "regex": return { type: "regex" as const, pattern: r.checkValue.trim() || "." }; case "file_exists": return { type: "file_exists" as const, path: r.checkValue.trim() }; case "http_status": return { type: "http_status" as const, url: r.checkValue.trim() }; default: return undefined; } })(); return { id: `REQ-${i + 1}`, text: r.text.trim(), check }; });
+    if (!title.trim()) { setError("Task name is required."); return; } if (criteria.length === 0) { setError("At least one acceptance criterion is required."); return; }
     setSubmitting(true);
-    try {
-      const res = await fetch("/api/verifications", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          description: description.trim(),
-          task: description.trim(),
-          creator: creator.trim() || "Anonymous Buyer",
-          agent: agent.trim() || "Unassigned",
-          reward: reward.trim() || undefined,
-          deadline: deadline.trim() || undefined,
-          requirements: criteria,
-          evidenceRequirements: ["Deliverable summary", "Supporting evidence"],
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to create verification");
-      router.push(`/jobs/${data.verification.id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create verification");
-      setSubmitting(false);
-    }
+    try { const res = await fetch("/api/verifications", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: title.trim(), description: description.trim(), task: description.trim(), creator: creator.trim() || "Anonymous Buyer", agent: agent.trim() || "Unassigned", reward: reward.trim() || undefined, deadline: deadline.trim() || undefined, requirements: criteria, evidenceRequirements: ["Deliverable summary", "Supporting evidence"] }) }); const data = await res.json(); if (!res.ok) throw new Error(data.error ?? "Failed to create verification"); saveVerificationHandoff(data.verification); router.push(`/jobs/${data.verification.id}`); } catch (err) { setError(err instanceof Error ? err.message : "Failed to create verification"); setSubmitting(false); }
   }
-
-  return (
-    <form onSubmit={submit} className="space-y-8">
-      <div className="grid gap-5 md:grid-cols-2">
-        <div className="md:col-span-2">
-          <label className="label">Task name *</label>
-          <input
-            className="input"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g. Implement a password reset flow"
-          />
-        </div>
-        <div className="md:col-span-2">
-          <label className="label">Task description</label>
-          <textarea
-            className="input min-h-24 resize-y"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Describe the work the agent must perform and the context…"
-          />
-        </div>
-        <div>
-          <label className="label">Creator / buyer</label>
-          <input className="input" value={creator} onChange={(e) => setCreator(e.target.value)} placeholder="Your name or address" />
-        </div>
-        <div>
-          <label className="label">Expected agent</label>
-          <input className="input" value={agent} onChange={(e) => setAgent(e.target.value)} placeholder="Agent name (optional)" />
-        </div>
-        <div>
-          <label className="label">Reward (optional)</label>
-          <input className="input" value={reward} onChange={(e) => setReward(e.target.value)} placeholder="e.g. 0.1 GEN (testnet)" />
-        </div>
-        <div>
-          <label className="label">Deadline (optional)</label>
-          <input className="input" value={deadline} onChange={(e) => setDeadline(e.target.value)} placeholder="YYYY-MM-DD or relative" />
-        </div>
-      </div>
-
-      <div>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-white">Acceptance criteria</h3>
-          <button type="button" onClick={addRow} className="btn-secondary !py-1.5 !px-3 text-xs">
-            + Add criterion
-          </button>
-        </div>
-        <div className="space-y-3">
-          {rows.map((r, i) => (
-            <div key={r.id} className="card flex flex-col gap-3 p-4 md:flex-row md:items-center">
-              <span className="shrink-0 font-mono text-[10px] text-slate-500">REQ-{i + 1}</span>
-              <input
-                className="input flex-1"
-                value={r.text}
-                onChange={(e) => updateRow(r.id, { text: e.target.value })}
-                placeholder="e.g. Invalid or expired tokens are rejected"
-              />
-              <div className="flex gap-2">
-                <select
-                  className="input w-44 shrink-0 !py-2 text-xs"
-                  value={r.checkType}
-                  onChange={(e) => updateRow(r.id, { checkType: e.target.value })}
-                >
-                  {CHECK_TYPES.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-                {r.checkType && r.checkType !== "http_status" && (
-                  <input
-                    className="input w-48 shrink-0 !py-2 text-xs"
-                    value={r.checkValue}
-                    onChange={(e) => updateRow(r.id, { checkValue: e.target.value })}
-                    placeholder={
-                      r.checkType === "string_present"
-                        ? "required string"
-                        : r.checkType === "function_exists"
-                          ? "function name"
-                          : r.checkType === "file_exists"
-                            ? "file path"
-                            : "pattern"
-                    }
-                  />
-                )}
-                {r.checkType === "http_status" && (
-                  <input
-                    className="input w-48 shrink-0 !py-2 text-xs"
-                    value={r.checkValue}
-                    onChange={(e) => updateRow(r.id, { checkValue: e.target.value })}
-                    placeholder="https://…"
-                  />
-                )}
-                {rows.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeRow(r.id)}
-                    className="shrink-0 rounded-lg border border-rose-500/30 px-2.5 text-xs text-rose-300 hover:bg-rose-500/10"
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {error && (
-        <p className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs text-rose-300">
-          {error}
-        </p>
-      )}
-
-      <div className="flex items-center gap-4">
-        <button type="submit" disabled={submitting} className="btn-primary">
-          {submitting ? "Creating…" : "CREATE VERIFICATION"}
-        </button>
-        <span className="text-xs text-slate-500">
-          Verification is performed against the original acceptance criteria.
-        </span>
-      </div>
-    </form>
-  );
+  const definedRequirements = rows.filter((row) => row.text.trim()).length;
+  return <form onSubmit={submit} className="space-y-8"><div className="create-layout"><div className="space-y-8">
+    <section className="card p-6 md:p-8"><div className="mb-6"><p className="eyebrow">Step 1 · Agreement</p><h2 className="mt-2 text-xl font-bold">What should the agent deliver?</h2><p className="mt-1 text-sm text-[var(--muted)]">Start with the outcome. Keep it specific enough that another party could check it.</p></div><div className="grid gap-5 md:grid-cols-2"><div className="md:col-span-2"><label className="label" htmlFor="task-title">Task name <span aria-hidden>*</span></label><input id="task-title" className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Implement a password reset flow" /></div><div className="md:col-span-2"><label className="label" htmlFor="task-description">Task description</label><textarea id="task-description" className="input min-h-28 resize-y" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Describe the work, context, and expected outcome…" /></div><div><label className="label" htmlFor="creator">Creator / buyer</label><input id="creator" className="input" value={creator} onChange={(e) => setCreator(e.target.value)} placeholder="Your name or address" /></div><div><label className="label" htmlFor="agent">Expected agent</label><input id="agent" className="input" value={agent} onChange={(e) => setAgent(e.target.value)} placeholder="Agent name (optional)" /></div><div><label className="label" htmlFor="reward">Reward <span className="normal-case tracking-normal text-[var(--soft-muted)]">(optional)</span></label><input id="reward" className="input" value={reward} onChange={(e) => setReward(e.target.value)} placeholder="e.g. 0.1 GEN (testnet)" /></div><div><label className="label" htmlFor="deadline">Deadline <span className="normal-case tracking-normal text-[var(--soft-muted)]">(optional)</span></label><input id="deadline" className="input" value={deadline} onChange={(e) => setDeadline(e.target.value)} placeholder="YYYY-MM-DD or relative" /></div></div></section>
+    <section className="card p-6 md:p-8"><div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><div className="flex flex-wrap items-center gap-3"><p className="eyebrow">Step 2 · Requirements</p><span className="requirement-count" aria-live="polite">{definedRequirements} defined</span></div><h2 className="mt-2 text-xl font-bold">What does “done” mean?</h2><p className="mt-1 text-sm text-[var(--muted)]">Write what must be true, then choose how AgentzProof should check it.</p></div><button type="button" onClick={addRow} className="btn-secondary shrink-0 !py-2 text-xs">+ Add requirement</button></div><div className="space-y-4">{rows.map((r, i) => { const check = CHECK_TYPES.find((item) => item.value === r.checkType) ?? CHECK_TYPES[0]; const deterministic = Boolean(r.checkType); return <div key={r.id} className="requirement-editor"><div className="requirement-editor-header"><span className="requirement-id">REQ-{i + 1}</span>{rows.length > 1 && <button type="button" onClick={() => removeRow(r.id)} className="remove-button">Remove</button>}</div><div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_15rem]"><div><label className="label" htmlFor={`requirement-${r.id}`}>Requirement</label><input id={`requirement-${r.id}`} className="input bg-white" value={r.text} onChange={(e) => updateRow(r.id, { text: e.target.value })} placeholder="What must be true? e.g. Expired reset tokens are rejected" /><p className="field-help">Describe the outcome the agent must satisfy.</p></div><div><label className="label" htmlFor={`check-type-${r.id}`}>Check type</label><select id={`check-type-${r.id}`} className="input bg-white text-sm" value={r.checkType} onChange={(e) => updateRow(r.id, { checkType: e.target.value, checkValue: "" })}>{CHECK_TYPES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><p className={`field-help ${deterministic ? "text-[var(--green)]" : ""}`}>{"help" in check ? check.help : "GenLayer independently evaluates this requirement."}</p></div></div>{deterministic && <div className="check-value-field"><label className="label" htmlFor={`check-value-${r.id}`}>{"valueLabel" in check ? check.valueLabel : "Check value"}</label><input id={`check-value-${r.id}`} className="input bg-white font-mono text-sm" value={r.checkValue} onChange={(e) => updateRow(r.id, { checkValue: e.target.value })} placeholder={"placeholder" in check ? check.placeholder : "Enter the value to check"} /><p className="field-help">This value is used by the deterministic check.</p></div>}</div>; })}</div><div className="mt-5 flex items-start gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-muted)] px-3 py-2.5 text-xs text-[var(--muted)]"><span className="text-[var(--orange-dark)]" aria-hidden>ⓘ</span><span><strong className="text-[var(--text)]">How checks work:</strong> choose a check when the answer is objective; choose “No check” when GenLayer should evaluate the requirement.</span></div></section>
+    <section className="card border-[var(--orange)]/20 bg-[var(--surface-warm)] p-6 md:p-8"><p className="eyebrow">Step 3 · Evidence</p><h2 className="mt-2 text-xl font-bold">What should the agent show?</h2><p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--muted)]">Agent submissions include a deliverable summary and supporting evidence. After creation, the agent can add code, test output, repository references, and other context.</p><div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-lg border border-[var(--border)] bg-white p-3 text-sm"><strong>Deliverable</strong><span className="mt-1 block text-[var(--muted)]">The work product itself</span></div><div className="rounded-lg border border-[var(--border)] bg-white p-3 text-sm"><strong>Evidence</strong><span className="mt-1 block text-[var(--muted)]">Proof that supports the claims</span></div></div></section>
+    {error && <p role="alert" className="rounded-lg border border-[#efb8b0] bg-[var(--red-soft)] px-4 py-3 text-sm text-[var(--red)]">{error}</p>}
+    <div className="card flex flex-col gap-4 p-6 sm:flex-row sm:items-center sm:justify-between"><div><p className="eyebrow">Step 4 · Review</p><h2 className="mt-2 font-bold">Verification ready?</h2><p className="mt-1 text-sm text-[var(--muted)]">{title.trim() || "Your task"} · {criteriaCount(rows)} requirement{criteriaCount(rows) === 1 ? "" : "s"}</p><p className="mt-1 text-xs text-[var(--soft-muted)]">You can add the deliverable and evidence after creation.</p></div><button type="submit" disabled={submitting} className="btn-primary shrink-0">{submitting ? "Creating…" : "Create Verification"}<span aria-hidden>→</span></button></div>
+    </div><aside className="create-preview-wrap"><div className="create-preview"><div className="flex items-center justify-between"><p className="eyebrow">Live proof preview</p><span className="status-badge status-neutral">DRAFT</span></div><h2 className="mt-4 text-xl font-bold">{title.trim() || "Your verification"}</h2><p className="mt-2 line-clamp-4 text-sm leading-relaxed text-[var(--muted)]">{description.trim() || "Your agreement summary will appear here as you define the work."}</p><div className="create-preview-section"><span>Agreement</span><strong>{title.trim() ? "Defined" : "Not yet defined"}</strong></div><div className="create-preview-section"><span>Requirements</span><strong>{definedRequirements} defined</strong></div><div className="create-preview-section"><span>Evidence</span><strong>Added after creation</strong></div><div className="create-preview-section"><span>Expected outcome</span><strong>{definedRequirements > 0 ? "Ready to evaluate" : "Add requirements"}</strong></div><p className="mt-5 text-xs leading-relaxed text-[var(--soft-muted)]">The proof record will preserve the original agreement, submitted evidence, deterministic checks, and GenLayer decision.</p></div></aside></div></form>;
 }
+function criteriaCount(rows: Row[]) { return rows.filter((r) => r.text.trim()).length; }
