@@ -196,10 +196,18 @@ function resolveChain(network: string) {
   }
 }
 
-export async function verifyOnGenLayer(
+/**
+ * Submit the verification transaction to GenLayer and return only the hash.
+ *
+ * This is intentionally split from finalization so the serverless function can
+ * return quickly (202) once a hash exists, instead of blocking on the network's
+ * potentially minutes-long finalization (which exceeds serverless time limits).
+ * The client then polls /finalize, which resumes waiting on this same hash.
+ */
+export async function submitVerificationTransaction(
   verificationId: string,
   request: Parameters<typeof toOnChainRequestJson>[0],
-): Promise<{ result: VerificationResult; tx: VerificationResult["tx"] }> {
+): Promise<string> {
   const config = getGenLayerConfig();
   if (!config) {
     throw new Error("GenLayer not configured (GENLAYER_CONTRACT_ADDRESS missing)");
@@ -231,6 +239,30 @@ export async function verifyOnGenLayer(
   if (typeof txHash !== "string" || txHash.length === 0) {
     throw new Error("GenLayer write did not return a transaction hash; retry is blocked.");
   }
+  return txHash;
+}
+
+/**
+ * Wait for an already-submitted transaction to finalize and read the result
+ * back from the contract. Resumable: the hash is persisted, so a serverless
+ * timeout here does not lose the submission — the next call resumes waiting.
+ */
+export async function finalizeVerificationTransaction(
+  verificationId: string,
+  txHash: string,
+): Promise<{ result: VerificationResult; tx: VerificationResult["tx"] }> {
+  const config = getGenLayerConfig();
+  if (!config) {
+    throw new Error("GenLayer not configured (GENLAYER_CONTRACT_ADDRESS missing)");
+  }
+
+  const chain = resolveChain(config.network);
+  const client = createClient({
+    chain,
+    ...(config.rpcUrl && config.rpcUrl !== "https://studio.genlayer.com/api"
+      ? { endpoint: config.rpcUrl }
+      : {}),
+  });
 
   const receipt = await client.waitForTransactionReceipt({
     hash: txHash as GenLayerTxHash,

@@ -22,8 +22,9 @@ import { runVerificationEngine } from "@/lib/verifier/engine";
 import { validateResultSchema } from "@/lib/verifier/schema";
 import {
   GenLayerCapacityError,
+  finalizeVerificationTransaction,
   getGenLayerConfig,
-  verifyOnGenLayer,
+  submitVerificationTransaction,
 } from "@/lib/genlayer/verifier";
 
 // ---------------------------------------------------------------------------
@@ -231,24 +232,13 @@ export async function submitDeliverable(
   return updated;
 }
 
-export async function runVerify(
-  id: string,
-  snapshot?: unknown,
-): Promise<{ verification: Verification; result: VerificationResult }> {
-  const verification = (await verificationStore.get(id)) ?? (await restoreVerification(id, snapshot, ["SUBMITTED"]));
-  if (!verification) throw new ValidationError("Verification not found.");
-  if (!verification.deliverable) {
-    throw new ValidationError("No deliverable submitted yet.");
-  }
-
-  await verificationStore.update(id, { status: "VERIFYING" });
-
-  const request = {
+function buildVerificationRequest(verification: Verification) {
+  return {
     version: "1.0",
     title: verification.title,
     task: verification.task || verification.description,
     requirements: verification.requirements,
-    deliverable: verification.deliverable,
+    deliverable: verification.deliverable as Deliverable,
     evidence: verification.evidence,
     evidenceUrls: verification.evidenceUrls,
     repository: verification.repository,
@@ -260,38 +250,113 @@ export async function runVerify(
       deadline: verification.deadline,
     },
   };
+}
 
-  const genConfig = getGenLayerConfig();
-  let result: VerificationResult;
-
-  if (genConfig) {
-    try {
-      const live = await verifyOnGenLayer(id, request);
-      result = live.result;
-      if (live.tx) result.tx = live.tx;
-    } catch (err) {
-      // writeContract throws the capacity error before returning a hash. Reset
-      // only this confirmed pre-submission case to the existing manual retry
-      // state; never retry or reset after a hash has been returned.
-      if (err instanceof GenLayerCapacityError) {
-        await verificationStore.update(id, { status: "SUBMITTED" });
-        throw new ValidationError(
-          "GenLayer is temporarily at capacity. No proof was submitted. Please retry.",
-        );
-      }
-
-      // Other live failures remain in VERIFYING because their transaction
-      // lifecycle is unknown and must not be retried blindly.
-      throw new ValidationError(
-        `GenLayer verification failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  } else {
-    result = await runVerificationEngine(request, { verificationId: id, mode: "demo" });
+/**
+ * Start a live GenLayer verification: submit the transaction, persist its
+ * hash, and return immediately. The serverless request must not block on
+ * finalization (that exceeds serverless time limits); the client then polls
+ * finalizeVerify() to resume waiting on the same hash.
+ */
+export async function startVerify(
+  id: string,
+  snapshot?: unknown,
+): Promise<{ verification: Verification; transactionHash?: string }> {
+  const verification = (await verificationStore.get(id)) ?? (await restoreVerification(id, snapshot, ["SUBMITTED"]));
+  if (!verification) throw new ValidationError("Verification not found.");
+  if (!verification.deliverable) {
+    throw new ValidationError("No deliverable submitted yet.");
+  }
+  if (!getGenLayerConfig()) {
+    throw new ValidationError("GenLayer is not configured for live verification.");
   }
 
-  validateResultSchema(result);
+  // Idempotent: a verification already submitted must never be re-submitted.
+  if (verification.status === "VERIFYING") {
+    if (verification.txHash) {
+      return { verification, transactionHash: verification.txHash };
+    }
+    throw new ValidationError(
+      "This verification is already in progress but has no recorded transaction hash. " +
+        "Inspect the GenLayer account/network before retrying; refusing to resubmit.",
+    );
+  }
 
+  const request = buildVerificationRequest(verification);
+  await verificationStore.update(id, { status: "VERIFYING" });
+
+  try {
+    const txHash = await submitVerificationTransaction(id, request);
+    const updated = await verificationStore.update(id, { txHash });
+    if (!updated) throw new ValidationError("Verification not found.");
+    return { verification: updated, transactionHash: txHash };
+  } catch (err) {
+    // The capacity error is thrown only for a confirmed pre-hash rejection.
+    // Reset only this case to the manual retry state; never retry or reset
+    // after a hash has been returned.
+    if (err instanceof GenLayerCapacityError) {
+      await verificationStore.update(id, { status: "SUBMITTED" });
+      throw new ValidationError(
+        "GenLayer is temporarily at capacity. No proof was submitted. Please retry.",
+      );
+    }
+
+    // Other live failures keep the VERIFYING state because their transaction
+    // lifecycle is unknown and must not be retried blindly.
+    throw new ValidationError(
+      `GenLayer verification failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+/**
+ * Wait for an already-submitted verification transaction to finalize and
+ * persist the result. Safe to call repeatedly: it never submits a transaction.
+ */
+export async function finalizeVerify(
+  id: string,
+): Promise<{ verification: Verification; result: VerificationResult }> {
+  const verification = await verificationStore.get(id);
+  if (!verification) throw new ValidationError("Verification not found.");
+
+  if ((verification.status === "PASSED" || verification.status === "FAILED") && verification.result) {
+    return { verification, result: verification.result };
+  }
+  if (!verification.txHash) {
+    throw new ValidationError("Verification has not been submitted.");
+  }
+
+  try {
+    const live = await finalizeVerificationTransaction(id, verification.txHash);
+    const result = live.result;
+    if (live.tx) result.tx = live.tx;
+    validateResultSchema(result);
+    const status = result.decision === "PASS" ? "PASSED" : "FAILED";
+    const updated = await verificationStore.update(id, { status, result });
+    if (!updated) throw new ValidationError("Verification not found.");
+    return { verification: updated, result };
+  } catch (err) {
+    throw new ValidationError(
+      `GenLayer verification failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+/** Synchronous demo-mode verification (fast, local, no blockchain). */
+export async function runDemoVerify(
+  id: string,
+  snapshot?: unknown,
+): Promise<{ verification: Verification; result: VerificationResult }> {
+  const verification = (await verificationStore.get(id)) ?? (await restoreVerification(id, snapshot, ["SUBMITTED"]));
+  if (!verification) throw new ValidationError("Verification not found.");
+  if (!verification.deliverable) {
+    throw new ValidationError("No deliverable submitted yet.");
+  }
+
+  await verificationStore.update(id, { status: "VERIFYING" });
+  const request = buildVerificationRequest(verification);
+  const result = await runVerificationEngine(request, { verificationId: id, mode: "demo" });
+  validateResultSchema(result);
   const status = result.decision === "PASS" ? "PASSED" : "FAILED";
   const updated = await verificationStore.update(id, { status, result });
   if (!updated) throw new ValidationError("Verification not found.");

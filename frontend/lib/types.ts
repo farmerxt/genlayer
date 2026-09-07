@@ -139,6 +139,7 @@ export interface Verification {
   evidenceUrls: string[];
   repository?: RepositoryRef;
   result?: VerificationResult;
+  txHash?: string;
   createdAt: string;
   updatedAt: string;
   demo?: boolean;
